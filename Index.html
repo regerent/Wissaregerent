@@ -1,0 +1,2295 @@
+import { useState, useEffect, useRef, useCallback } from “react”;
+
+/* ═══════════════════════════════════════════════════════════════
+REGERENT PRO v13 — OPPOSITION INTEL EDITION
+Bebas Neue × DM Sans × DM Mono
+
+🆕 V12 → V13: Opposition Intel (6ème onglet natif)
+✅ Match analysis Chelsea vs Newcastle (14 mars 2026)
+✅ Readiness Gate connecté aux vraies données biométriques
+✅ Algorithme Matchup Score (readiness × faille × historique × fatigue)
+✅ 3 defenders adversaires avec profil + vulnérabilité
+✅ 3 failles systémiques Chelsea avec niveau critique
+✅ Brief tactique Wissa par situation (6 scénarios)
+✅ Timeline J-9 → J0 → Post-match
+✅ Brief IA live généré via Anthropic API
+✅ Design REGERENT PRO dark — cohérent avec tous les autres onglets
+
+IMPROVEMENTS v11 → v12:
+✅ Weighted convergence (HRV×2, ACWR×2, pain×2, hydration×0.5)
+✅ 7-day weight delta on baseline (not day-to-day)
+✅ 5-night minimum threshold for reliable alerts
+✅ Post-match 48h recovery window
+✅ Degressive recidive risk (knee +8, ankle +3)
+✅ Personal HRV baseline after 14 days
+✅ Sensor anomaly detection + warnings
+✅ Colorblind-friendly shapes (●▲■)
+✅ 5-day calibration bar
+✅ Re-engagement banner (2+ days no check-in)
+🆕 sRPE = RPE × session duration (vs raw RPE)
+🆕 Season position in risk calc (early/mid/late)
+🆕 “Recommend to teammate” in passport
+🆕 Share readiness with agent
+🆕 Slide transitions between screens
+🆕 Enlarged body scan zones with always-visible labels
+🆕 Visible save state during check-in
+🆕 Day 1 personalized welcome message
+🆕 Streak broken notification
+🆕 Live AI Coach (Anthropic API)
+🆕 Intelligence screen with charts
+🆕 ACWR gauge, HRV chart, Readiness history bars
+🆕 Business: financial impact in simulation
+═══════════════════════════════════════════════════════════════ */
+
+// ── DESIGN TOKENS ────────────────────────────────────────────
+const C = {
+bg:”#04080F”, s1:”#0A1520”, card:”#0F1B2D”, card2:”#111D2E”,
+b:“rgba(255,255,255,0.05)”, bl:“rgba(255,255,255,0.09)”, bm:“rgba(255,255,255,0.15)”,
+w:”#EEF1F6”, d:“rgba(255,255,255,0.5)”, m:“rgba(255,255,255,0.22)”,
+blue:”#3B82F6”, bD:“rgba(59,130,246,0.12)”, bG:“rgba(59,130,246,0.25)”,
+green:”#22C55E”, gD:“rgba(34,197,94,0.10)”,
+amber:”#F59E0B”, aD:“rgba(245,158,11,0.10)”,
+red:”#EF4444”, rD:“rgba(239,68,68,0.10)”,
+purple:”#A855F7”, pD:“rgba(168,85,247,0.10)”,
+cyan:”#06B6D4”, cD:“rgba(6,182,212,0.10)”,
+};
+const F = {
+h:”‘Bebas Neue’,sans-serif”,
+b:”‘DM Sans’,sans-serif”,
+m:”‘DM Mono’,monospace”
+};
+const FONT_URL = “https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Mono:wght@400;500&display=swap”;
+
+// ── PLAYER PROFILE ────────────────────────────────────────────
+const PLAYER = {
+name:“Yoane”, last:“Wissa”, club:“Newcastle United”, num:“9”,
+pos:“Avant-centre”, age:29, height:“176cm”, weight:“72kg”,
+nat:“RD Congo 🇨🇩”, nat2:“France 🇫🇷”,
+// ✅ Prochain match: Man City FA Cup 5ème tour — 7 mars 2026
+next:{opp:“Man City”, home:true, date:“07 Mar”, time:“20:00”, days:2},
+value:58.0, // M€ (transfert £50M sept 2025)
+season:{
+// Toutes compétitions au 5 mars 2026
+// PL: 12 apps, 425 min, 1 but, 0 passe — FootyStats/Premier League
+// EFL Cup: 1 but (17 déc vs Fulham) — Wikipedia
+// CL: 1 but (21 jan vs PSV) — Wikipedia
+// Man Utd 4 mars: banc, non utilisé
+apps:16, starts:8, mins:550, g:3, a:1, inj:26,
+position:“mid”,
+},
+passport:{
+clubs:[
+{name:“FC Épinay Athletico”,yr:“2003–2011”,youth:true},
+{name:“LB Châteauroux”,yr:“2015–2017”,apps:54},
+{name:“Angers SCO”,yr:“2017–2018”,apps:15},
+{name:“FC Lorient”,yr:“2018–2021”,apps:128},
+{name:“FC Brentford”,yr:“2021–2025”,apps:155},
+{name:“Newcastle United”,yr:“2025–now”,apps:16},
+],
+total:{apps:368, goals:96, assists:26},
+intl:{caps:35, goals:8, team:“RD Congo 🇨🇩”},
+injuries:[
+// ✅ Données Transfermarkt vérifiées le 5 mars 2026
+// recency = mois depuis retour au jeu (5 mars 2026)
+{type:“Blessure au genou”,date:“15 Août → 6 Déc 2025”,days:114,missed:23,zone:“Genou D”,highlight:true,recency:3},
+{type:“Contusion au genou”,date:“12 Fév → 23 Fév 2026”,days:12,missed:3,zone:“Genou D”,recency:0.3},
+{type:“Blessure à la cheville”,date:“14 Sep → 19 Oct 2024”,days:36,missed:6,zone:“Cheville”,recency:17},
+{type:“Blessure à la malléole”,date:“10 Oct → 20 Nov 2021”,days:42,missed:8,zone:“Malléole”,recency:52},
+],
+},
+};
+
+const RECOV_EQUIP = {
+hyperbaric:{name:“Caisson Hyperbare REGERENT”,pressure:“1.5 ATA”,protocols:[
+{id:“post-match”,name:“Post-match”,dur:60,note:“Dans les 12h après le match. Réduit inflammation, accélère réparation.”},
+{id:“maintenance”,name:“Maintenance”,dur:45,note:“2–3×/semaine. Optimise récupération quotidienne.”},
+{id:“pre-match”,name:“Pré-match J-1”,dur:30,note:“Oxygénation optimale avant le match.”},
+{id:“injury-prev”,name:“Prévention blessure”,dur:60,note:“Quand le corps montre des signes de fatigue.”},
+]},
+hotcold:{name:“REGERENT Recovery System”,model:“VU-COT03”,protocols:[
+{id:“cold-post-train”,name:“Froid post-entraînement”,dur:20,mode:“cold+compression”,note:“Compression froide sur les jambes.”},
+{id:“cold-knee”,name:“Froid ciblé genou”,dur:15,mode:“cold+compression”,note:“Zone à risque de Yoane. Manchon en compression.”},
+{id:“contrast”,name:“Contraste chaud/froid”,dur:30,mode:“contrast”,note:“Alternance 40°C / 5°C. Stimule circulation.”},
+{id:“hot-relax”,name:“Chaud récupération”,dur:25,mode:“hot+compression”,note:“Relaxation musculaire. Réduit courbatures.”},
+]},
+};
+
+// ── OPPOSITION INTEL DATA — 3 MATCHS À VENIR ─────────────────
+const MATCHES = [
+{
+id:“mancity”,
+opp:“Man City”,badge:“MCI”,date:“7 Mars 2026”,time:“20:00 UTC”,
+venue:“St James’ Park”,comp:“FA Cup · 5ème Tour”,
+daysUntil:2,home:true,
+compColor:”#3B82F6”,compIcon:“🏆”,
+prob:{home:32.0,draw:24.0,away:44.0},
+ranking:{home:11,away:2},
+pts:{home:39,away:62},
+context:[
+{icon:“⚠”,col:”#EF4444”,text:“Haaland incertain (ménagement) — attaque City remodelée”},
+{icon:“💪”,col:”#22C55E”,text:“Newcastle 2-1 Man Utd hier — moral au top, mais fatigue réelle”},
+{icon:“🔄”,col:”#F59E0B”,text:“City éliminé Newcastle en Carabao Cup semi (3-1) — revanche”},
+{icon:“🏟”,col:”#06B6D4”,text:“St James’ Park — ambiance explosive en FA Cup”},
+],
+defenders:[
+{name:“Josko Gvardiol”,num:“3”,pos:“DC/LB”,rating:8.1,flag:“🇭🇷”,
+threat:“CIBLE PRINCIPALE”,threatCol:”#EF4444”,
+traits:[“Défend haut”,“Faible dans son dos en transition”,“Agressif sur les duels aériens”],
+brief:“Appels dans la profondeur côté gauche. Gvardiol monte — espace exploitable.”,vulnScore:72},
+{name:“Manuel Akanji”,num:“25”,pos:“DC Droit”,rating:7.8,flag:“🇨🇭”,
+threat:“CIBLE SECONDAIRE”,threatCol:”#F59E0B”,
+traits:[“Ligne haute”,“Bon sur les duels mais lent à reculer”,“Sort de sa zone”],
+brief:“Appels dans le dos en transition rapide — ligne trop haute.”,vulnScore:65},
+{name:“Rico Lewis”,num:“82”,pos:“LB/Milieu”,rating:7.5,flag:“🏴󠁧󠁢󠁥󠁮󠁧󠁿”,
+threat:“TRANSITION”,threatCol:”#06B6D4”,
+traits:[“S’inverse dans le milieu”,“Laisse espace en couloir”,“18 ans”],
+brief:“Transition — si Lewis est monté, couloir gauche ouvert.”,vulnScore:70},
+],
+failles:[
+{id:1,level:“ÉLEVÉE”,col:”#F59E0B”,title:“Ligne Défensive Haute”,
+stat:“Pièges au hors-jeu × 3.2/match”,
+desc:“City joue une ligne très haute. Appels en profondeur synchronisés avec le milieu de Newcastle peuvent créer des situations 1v1 avec le gardien.”,
+actions:[“Timing des appels dans le dos”,“Coordination avec Barnes/Gordon”,“Sprint dès perte de balle adverse”]},
+{id:2,level:“ÉLEVÉE”,col:”#F59E0B”,title:“Transitions après Possession”,
+stat:“8-9 joueurs devant le ballon → espace derrière”,
+desc:“City s’avance massivement. Sur récupération de balle, les contre-attaques à 3v3 ou 3v2 sont fréquentes avec leur profil offensif.”,
+actions:[“Contre-attaque immédiate”,“Vitesse max dans les 5 premières secondes”,“Wissa en pivot de relance rapide”]},
+{id:3,level:“MODÉRÉE”,col:”#06B6D4”,title:“Coups de Pied Arrêtés”,
+stat:“2ème défense sur CPA — mais vulnérable sur variation”,
+desc:“City est fort sur CPA, mais les variations de trajectoire et les décalages déstabilisent leur organisation. Pas de joueur dominant dans la surface.”,
+actions:[“Variations de corner”,“Tirs directs sur coup franc”,“Blocages sur second poteau”]},
+],
+situations:[
+{ctx:“Face à Gvardiol”,action:“Appels dans le dos côté gauche”,why:“Défend haut — espace derrière lui”},
+{ctx:“Sur contre-attaque”,action:“Sprint immédiat, vitesse max 5 secondes”,why:“City avancé — ratio favorable derrière”},
+{ctx:“Sur coup franc”,action:“Tir direct ou variation de trajectoire”,why:“City bonne sur CPA mais vulnérable aux variations”},
+{ctx:“En duel aérien”,action:“Attaque du premier poteau”,why:“Akanji sort de sa zone — second poteau libre”},
+{ctx:“En appui”,action:“Combinaison courte + décalage”,why:“City press très haut — le jeu court les expose”},
+{ctx:“Si Readiness < 65”,action:“Rôle pivot + impact de 20 min”,why:“FA Cup — entrée décisive vaut mieux que 90 min à vide”},
+],
+calcMatchup:(r)=>Math.round((r||74)*0.4+65*0.35+55*0.15+48*0.10),
+},
+{
+id:“barcelona”,
+opp:“FC Barcelona”,badge:“FCB”,date:“10 Mars 2026”,time:“20:00 UTC”,
+venue:“St James’ Park”,comp:“LDC · 8ème de Finale · Aller”,
+daysUntil:5,home:true,
+compColor:”#A855F7”,compIcon:“⭐”,
+prob:{home:28.0,draw:25.0,away:47.0},
+ranking:{home:11,away:1},
+pts:{home:39,away:null},
+context:[
+{icon:“⚽”,col:”#EF4444”,text:“Barcelone 2-1 Newcastle en phase de groupes — revenge nécessaire”},
+{icon:“⚠”,col:”#F59E0B”,text:“Frenkie de Jong absent — milieu remanié (Bernal titulaire)”},
+{icon:“🌟”,col:”#A855F7”,text:“Yamal + Raphinha + Lewandowski — triple menace offensive”},
+{icon:“🏟”,col:”#22C55E”,text:“St James’ Park Aller — ambiance = 12ème homme. Résultat serré essentiel.”},
+],
+defenders:[
+{name:“Jules Koundé”,num:“23”,pos:“RB/DC”,rating:8.0,flag:“🇫🇷”,
+threat:“CIBLE PRINCIPALE”,threatCol:”#EF4444”,
+traits:[“Monte beaucoup”,“Côté droit offensif”,“Retour défensif limité”],
+brief:“Koundé s’avance — exploitation du couloir gauche en transition.”,vulnScore:76},
+{name:“Pau Cubarsí”,num:“33”,pos:“DC Gauche”,rating:7.9,flag:“🇪🇸”,
+threat:“CIBLE SECONDAIRE”,threatCol:”#F59E0B”,
+traits:[“17 ans — encore en développement”,“Physiquement moins imposant”,“Jeu aérien perfectible”],
+brief:“Duel physique répété + combats aériens — l’user dans la durée.”,vulnScore:69},
+{name:“Alejandro Balde”,num:“3”,pos:“LB”,rating:7.7,flag:“🇪🇸”,
+threat:“TRANSITION”,threatCol:”#06B6D4”,
+traits:[“Latéral très offensif”,“Couloir droit dégarni”,“Sort sur pressing”],
+brief:“Quand Balde monte — couloir droit libre pour Gordon/Elanga.”,vulnScore:74},
+],
+failles:[
+{id:1,level:“CRITIQUE”,col:”#EF4444”,title:“Pressing Haut Exposé”,
+stat:“Erreurs sur relance × 2.1/match en CL”,
+desc:“Barcelone joue très haut avec pressing intensif. Mais leur ligne défensive laisse un espace énorme derrière. Les ballons dans le dos de Cubarsí ou entre Koundé et lui créent des situations directes.”,
+actions:[“Longs ballons dans le dos de la défense”,“Timing sur appels de Wissa”,“Gordon/Elanga en couloirs larges”]},
+{id:2,level:“ÉLEVÉE”,col:”#F59E0B”,title:“Latéraux Offensifs Trop Haut”,
+stat:“Koundé et Balde — 7.2 centres/match”,
+desc:“Les deux latéraux montent systématiquement. En transition rapide, les espaces dans les couloirs sont immenses. Newcastle doit attaquer ces zones en priorité.”,
+actions:[“Contre-attaque par les couloirs”,“Passe dans la profondeur sur Koundé”,“Vitesse de Gordon et Elanga en face”]},
+{id:3,level:“ÉLEVÉE”,col:”#F59E0B”,title:“Milieu Fragilisé (De Jong absent)”,
+stat:“Bernal titulaire — moins d’expérience LDC”,
+desc:“Sans De Jong, Barcelone perd son équilibre en milieu. Bernal est technique mais physiquement moins présent. Le pressing physique de Joelinton/Tonali peut créer des inégalités.”,
+actions:[“Duel physique sur Bernal”,“Pressing sur le porteur milieu”,“Tempo élevé en 1ère mi-temps”]},
+],
+situations:[
+{ctx:“Face à Cubarsí”,action:“Duels physiques répétés — l’user dans la durée”,why:“17 ans, moins imposant physiquement”},
+{ctx:“Koundé monte”,action:“Passe longue dans son dos côté droit”,why:“Retour défensif insuffisant quand il est haut”},
+{ctx:“Sur transition”,action:“Balle dans le dos — appel synchronisé”,why:“Ligne trop haute — espace énorme derrière”},
+{ctx:“Sur coup franc”,action:“Tir direct ou variation basse”,why:“Garcia bon gardien mais sensible aux tirs rasants”},
+{ctx:“En milieu de terrain”,action:“Pressing physique sur Bernal”,why:“De Jong absent — Bernal moins expérimenté en LDC”},
+{ctx:“Si Readiness < 65”,action:“Entrer à la 65ème — impact sur défense fatiguée”,why:“Barcelone baisse physiquement en fin de match”},
+],
+calcMatchup:(r)=>Math.round((r||74)*0.4+72*0.35+50*0.15+55*0.10),
+},
+{
+id:“chelsea”,
+opp:“Chelsea FC”,badge:“CFC”,date:“14 Mars 2026”,time:“17:30 UTC”,
+venue:“Stamford Bridge”,comp:“Premier League · J30”,
+daysUntil:9,home:false,
+compColor:”#3B82F6”,compIcon:“🏴󠁧󠁢󠁥󠁮󠁧󠁿”,
+prob:{home:52.7,draw:23.1,away:24.2},
+ranking:{home:4,away:11},
+pts:{home:45,away:39},
+context:[
+{icon:“⚽”,col:”#22C55E”,text:“Chelsea 4-1 Aston Villa (4 mars) — João Pedro triplé”},
+{icon:“⚠”,col:”#EF4444”,text:“Fofana revient de suspension — état mental fragile”},
+{icon:“🔄”,col:”#3B82F6”,text:“Chelsea vs PSG CL le 11 mars → rotation probable J+3”},
+{icon:“💪”,col:”#22C55E”,text:“Newcastle 2-1 Man Utd (4 mars) — Wissa sur le banc, retour imminent”},
+],
+defenders:[
+{name:“Wesley Fofana”,num:“3”,pos:“DC Gauche”,rating:7.1,flag:“🇫🇷”,
+threat:“CIBLE PRINCIPALE”,threatCol:”#EF4444”,
+traits:[“Mentalement fragile”,“6ème expulsion saison”,“Craque sous accumulation”],
+brief:“Duels répétés + pression constante → accumulation → il craque.”,vulnScore:88},
+{name:“Trevoh Chalobah”,num:“14”,pos:“DC Droit”,rating:7.2,flag:“🏴󠁧󠁢󠁥󠁮󠁧󠁿”,
+threat:“CIBLE SECONDAIRE”,threatCol:”#F59E0B”,
+traits:[“Sort beaucoup de sa zone”,“Espace dans son dos”,“Agressif = à exploiter”],
+brief:“Appels dans le dos côté droit → exploite son agressivité.”,vulnScore:74},
+{name:“Jorrel Hato”,num:“33”,pos:“LB Gauche”,rating:6.8,flag:“🇳🇱”,
+threat:“TRANSITION”,threatCol:”#06B6D4”,
+traits:[“18 ans — inexpérimenté”,“S’inverse dans le milieu”,“Retour défensif lent”],
+brief:“En transition rapide → accélération côté gauche → Hato lent au retour.”,vulnScore:79},
+],
+failles:[
+{id:1,level:“CRITIQUE”,col:”#EF4444”,title:“Coups de Pied Arrêtés”,
+stat:“13.5 xG concédés · 7 buts sur corner”,
+desc:“Pire équipe PL défensivement sur CPA. Rosenior l’a lui-même admis. Fofana très vulnérable sur le second poteau.”,
+actions:[“Second poteau sur corner”,“Blocage ciblé sur Fofana”,“Variation de trajectoire”]},
+{id:2,level:“CRITIQUE”,col:”#EF4444”,title:“Transitions Défensives”,
+stat:“229 pertes critiques · 19ème/20 PL”,
+desc:“Full-backs inversés créent espaces béants derrière eux. Hato s’avance — retour défensif lent.”,
+actions:[“Accélération dès récupération”,“Côté gauche en priorité”,“Vitesse avant organisation”]},
+{id:3,level:“ÉLEVÉE”,col:”#F59E0B”,title:“Build-up sous Pression”,
+stat:“Erreurs directes vs Leeds & Arsenal”,
+desc:“Fofana et Chalobah font des erreurs directes sous pressing physique. Pattern confirmé sur 2 matchs récents.”,
+actions:[“Pressing haut sur relance”,“Cibler Fofana en 1v1”,“Bloc haut dès perte de balle”]},
+],
+situations:[
+{ctx:“Face à Fofana”,action:“Duels répétés + pression constante”,why:“Mentalement fragile — accumulation le fait craquer”},
+{ctx:“Face à Chalobah”,action:“Appels dans le dos côté droit”,why:“Sort beaucoup — espace derrière lui”},
+{ctx:“Sur corner Newcastle”,action:“Second poteau + blocage Fofana”,why:“Pire équipe PL sur CPA défensifs”},
+{ctx:“Transition rapide”,action:“Accélération immédiate côté gauche”,why:“Hato s’avance — retour défensif lent”},
+{ctx:“Build-up Chelsea”,action:“Pressing haut sur Fofana/Chalobah”,why:“Erreurs directes confirmées sous pression”},
+{ctx:“Si Readiness < 65”,action:“Rôle pivot + combinaisons courtes”,why:“Économiser énergie pour 2ème mi-temps”},
+],
+calcMatchup:(r)=>Math.round((r||74)*0.4+82*0.35+68*0.15+76*0.10),
+},
+];
+
+// Keep OPP as alias to first match for backward compat
+const OPP = {match:MATCHES[0], defenders:MATCHES[0].defenders, failles:MATCHES[0].failles, situations:MATCHES[0].situations};
+
+function calcMatchupScore(readiness, matchIdx=0){
+return MATCHES[matchIdx].calcMatchup(readiness);
+}
+
+const EXPLAIN = {
+“HRV TREND”:“La direction de ton HRV sur 7 jours. Une baisse progressive est souvent le premier signal avant une blessure musculaire.”,
+“HRV VARIAB.”:“La stabilité de ton HRV. Quand il oscille trop, ton système nerveux est sous pression.”,
+“TEMP. NUIT”:“L’écart de ta température corporelle nocturne. Au-dessus de +0.5°C = possible inflammation.”,
+“RESP. NUIT”:“Fréquence respiratoire nocturne. Une hausse de 2+ signale une inflammation avant que tu la ressentes.”,
+“DETTE SOMMEIL”:“Cumul des heures manquantes sur 7 jours (cible 7.5h/nuit). Se rembourse en 3–4 bonnes nuits.”,
+“CIRCADIEN”:“La régularité de ton heure de coucher. Plus c’est stable, mieux ton corps récupère.”,
+“CHARGE MÉC.”:“Impact mécanique : sprints, accélérations, décélérations. Un spike = risque d’élongation.”,
+“BILAN RÉCUP”:“Ton compte en banque récupération. Chaque nuit dépose, chaque séance retire. Négatif = danger.”,
+“ACWR”:“Ratio charge récente (7j) / charge habituelle (28j). Au-dessus de 1.3 = spike dangereux.”,
+“RISQUE”:“Risque composite : tous indicateurs + historique blessures + position de saison.”,
+“sRPE”:“Charge interne subjective = RPE × durée séance. Mesure l’effort ressenti réel.”,
+“CONVERGENCE”:“Nombre de signaux d’alerte simultanés. Plus il y en a, plus le risque est élevé.”,
+};
+
+// ── SIMULATION DATA ───────────────────────────────────────────
+const SIM_DAYS = {
+“J1”:{sleep:{total:7.6,deep:1.8,rem:1.9,light:3.3,awake:0.6,hrv:68,rhr:51,spo2:98,temp:0.1,latency:8,respRate:13.8,bed:“23:00”,wake:“06:36”},train:{dur:75,avg:136,max:170,trimp:250,dist:9.0,hiDist:0.9,sprints:14,accel:24,decel:20},wellness:{fatigue:5,soreness:5,mood:5,stress:5,weight:72.1,water:2.5,nutrition:4,alcohol:false,meds:false,travel:false,rpe:4}},
+“J2”:{sleep:{total:7.3,deep:1.6,rem:1.7,light:3.4,awake:0.6,hrv:64,rhr:52,spo2:98,temp:0.1,latency:9,respRate:14.0,bed:“23:15”,wake:“06:30”},train:{dur:90,avg:148,max:182,trimp:380,dist:11.0,hiDist:1.8,sprints:24,accel:36,decel:32},wellness:{fatigue:4,soreness:4,mood:4,stress:4,weight:72.0,water:2,nutrition:4,alcohol:false,meds:false,travel:false,rpe:8}},
+“J3”:{sleep:{total:7.5,deep:1.7,rem:1.8,light:3.4,awake:0.6,hrv:62,rhr:53,spo2:97,temp:0.2,latency:11,respRate:14.2,bed:“23:30”,wake:“07:00”},train:{dur:40,avg:120,max:148,trimp:110,dist:4.0,hiDist:0.2,sprints:3,accel:6,decel:5},wellness:{fatigue:3,soreness:3,mood:4,stress:4,weight:72.2,water:2,nutrition:3,alcohol:false,meds:false,travel:false,rpe:3}},
+“J4”:{sleep:{total:7.4,deep:1.6,rem:1.7,light:3.5,awake:0.6,hrv:66,rhr:51,spo2:98,temp:0.1,latency:8,respRate:13.9,bed:“23:00”,wake:“06:30”},train:{dur:85,avg:140,max:175,trimp:290,dist:9.5,hiDist:1.0,sprints:16,accel:26,decel:22},wellness:{fatigue:4,soreness:5,mood:5,stress:5,weight:72.0,water:2.5,nutrition:5,alcohol:false,meds:false,travel:false,rpe:5}},
+“J5”:{sleep:{total:6.6,deep:1.1,rem:1.4,light:3.6,awake:0.5,hrv:55,rhr:55,spo2:97,temp:0.3,latency:18,respRate:14.8,bed:“00:00”,wake:“06:36”},train:{dur:88,avg:146,max:180,trimp:340,dist:10.2,hiDist:1.5,sprints:22,accel:34,decel:30},wellness:{fatigue:3,soreness:3,mood:3,stress:2,weight:71.3,water:1,nutrition:2,alcohol:true,meds:false,travel:false,rpe:8}},
+“J6”:{sleep:{total:6.2,deep:0.9,rem:1.2,light:3.6,awake:0.5,hrv:48,rhr:57,spo2:96,temp:0.5,latency:24,respRate:15.6,bed:“00:30”,wake:“06:40”},train:{dur:90,avg:150,max:184,trimp:360,dist:10.5,hiDist:1.8,sprints:26,accel:38,decel:34},wellness:{fatigue:2,soreness:2,mood:2,stress:2,weight:71.0,water:1,nutrition:2,alcohol:false,meds:true,travel:true,rpe:9},painZones:[“knee_r”]},
+“J7”:{sleep:{total:5.9,deep:0.7,rem:1.1,light:3.6,awake:0.5,hrv:42,rhr:59,spo2:96,temp:0.7,latency:30,respRate:16.1,bed:“00:45”,wake:“06:40”},train:{dur:85,avg:148,max:183,trimp:340,dist:9.8,hiDist:1.6,sprints:22,accel:34,decel:30},wellness:{fatigue:2,soreness:1,mood:2,stress:1,weight:70.6,water:1,nutrition:2,alcohol:false,meds:true,travel:false,rpe:9},painZones:[“knee_r”,“ankle_r”]},
+“J8”:{sleep:{total:5.5,deep:0.6,rem:0.9,light:3.5,awake:0.5,hrv:36,rhr:61,spo2:95,temp:0.9,latency:38,respRate:16.6,bed:“01:00”,wake:“06:30”},train:{dur:82,avg:152,max:186,trimp:350,dist:9.5,hiDist:1.7,sprints:24,accel:36,decel:32},wellness:{fatigue:1,soreness:1,mood:1,stress:1,weight:70.3,water:0.5,nutrition:1,alcohol:false,meds:true,travel:false,rpe:10},painZones:[“knee_r”,“ankle_r”,“quad_r”]},
+“J9”:{sleep:{total:5.2,deep:0.5,rem:0.8,light:3.4,awake:0.5,hrv:32,rhr:63,spo2:94,temp:1.2,latency:42,respRate:17.0,bed:“01:15”,wake:“06:25”},wellness:{fatigue:1,soreness:1,mood:1,stress:1,weight:70.0,water:0.5,nutrition:1,alcohol:false,meds:true,travel:false},painZones:[“knee_r”,“ankle_r”,“quad_r”,“groin”]},
+};
+
+// ── STORAGE ───────────────────────────────────────────────────
+const SK = “rp12-yw”;
+const EMPTY = {days:{}, showSim:true, onboarded:false};
+let mem = {…EMPTY};
+async function loadStore(){try{const r=await window.storage.get(SK);if(r?.value){mem=JSON.parse(r.value);return mem;}}catch(e){}return{…mem};}
+async function saveStore(s){mem=s;try{await window.storage.set(SK,JSON.stringify(s));}catch(e){}}
+async function clearStore(){mem={…EMPTY};try{await window.storage.delete(SK);}catch(e){}}
+
+// ── ENGINE ────────────────────────────────────────────────────
+const todayKey = () => new Date().toISOString().slice(0,10);
+
+function getHist(store, n=28){
+const h=[];
+for(let i=n-1;i>=0;i–){
+const dt=new Date(); dt.setDate(dt.getDate()-i);
+const dk=dt.toISOString().slice(0,10);
+if(store.days[dk]) h.push({date:dk,…store.days[dk]});
+}
+return h;
+}
+
+// Sensor anomaly detection
+function detectAnomalies(sleep){
+if(!sleep) return [];
+const a=[];
+if(sleep.hrv>0&&(sleep.hrv<15||sleep.hrv>130)) a.push(“HRV “+sleep.hrv+“ms hors plage (15–130)”);
+if(sleep.rhr>0&&(sleep.rhr<30||sleep.rhr>100)) a.push(“FC repos “+sleep.rhr+“bpm hors plage (30–100)”);
+if(sleep.spo2>0&&sleep.spo2<80) a.push(“SpO2 “+sleep.spo2+”% critique (<80%)”);
+if(sleep.temp>3||sleep.temp<-2) a.push(“Température “+sleep.temp+“°C — données suspectes”);
+return a;
+}
+
+// Personal HRV baseline (after 14 days)
+function personalHRVBaseline(hist){
+const d=hist.filter(h=>h.sleep?.hrv).slice(-14);
+if(d.length<14) return null;
+return Math.round(d.reduce((s,h)=>s+h.sleep.hrv,0)/d.length);
+}
+
+// sRPE = RPE × duration (in minutes) — standardized per 100min
+function calcsRPE(wellness, trainDur){
+if(!wellness?.rpe||!trainDur) return 0;
+return Math.round(wellness.rpe * trainDur);
+}
+
+// Season position modifier (early season = more risk, late = fatigue accumulation)
+function seasonRiskMod(pos){
+if(pos===“early”) return 5;   // less fitness base
+if(pos===“late”) return 8;    // accumulated fatigue
+return 0;                      // mid-season optimal
+}
+
+function calcReadiness(day){
+if(!day?.sleep) return 74;
+const s=day.sleep, w=day.wellness;
+const anomalies=detectAnomalies(s);
+if(anomalies.length>0) return null; // suspicious data
+let sc=40;
+if(s.total>=7&&s.total<=9) sc+=12; else if(s.total>=6) sc+=6; else if(s.total<5) sc-=5;
+if(s.deep>=1.5) sc+=8; else if(s.deep>=1) sc+=4;
+if(s.hrv>=65) sc+=12; else if(s.hrv>=55) sc+=8; else if(s.hrv>=45) sc+=3; else sc-=3;
+if(s.rhr<=52) sc+=8; else if(s.rhr<=58) sc+=5; else if(s.rhr>65) sc-=3;
+const t=s.temp||0;
+if(Math.abs(t)<=0.3) sc+=4; else if(t>=0.8) sc-=6; else if(t>0.5) sc-=3;
+if(s.spo2>=96) sc+=2; else if(s.spo2<94) sc-=3;
+if(s.latency>0){if(s.latency<=15) sc+=3; else if(s.latency>=30) sc-=4;}
+if(s.respRate>0){if(s.respRate<=15) sc+=2; else if(s.respRate>=17) sc-=4;}
+if(w){
+sc+=Math.round((w.mood-((w.fatigue+w.soreness+w.stress)/3))*3);
+if(w.alcohol) sc-=8;
+if(w.water>0&&w.water<1.5) sc-=4;
+if(w.nutrition>0&&w.nutrition<=2) sc-=3;
+if(w.travel) sc-=3;
+}
+return Math.min(100,Math.max(0,Math.round(sc)));
+}
+
+function calcHRVTrend(hist){
+const d=hist.filter(h=>h.sleep?.hrv&&!detectAnomalies(h.sleep).length).slice(-7);
+if(d.length<3) return {slope:0,label:”—”,color:C.m,values:[]};
+const n=d.length, ys=d.map(h=>h.sleep.hrv);
+const xm=(n-1)/2, ym=ys.reduce((a,b)=>a+b)/n;
+const num=ys.reduce((s,y,i)=>s+(i-xm)*(y-ym),0);
+const den=ys.reduce((s,_,i)=>s+(i-xm)**2,0);
+const slope=den?num/den:0;
+if(slope>1.5) return {slope,label:“↗ Hausse”,color:C.green,values:ys};
+if(slope<-1.5) return {slope,label:“↘ Baisse”,color:C.red,values:ys};
+return {slope,label:“→ Stable”,color:C.blue,values:ys};
+}
+
+function calcHRVCV(hist){
+const v=hist.filter(h=>h.sleep?.hrv&&!detectAnomalies(h.sleep).length).slice(-7).map(h=>h.sleep.hrv);
+if(v.length<4) return {cv:0,label:”—”,color:C.m};
+const m=v.reduce((a,b)=>a+b)/v.length;
+const std=Math.sqrt(v.reduce((s,x)=>s+(x-m)**2,0)/v.length);
+const cv=Math.round((std/m)*100);
+if(cv>15) return {cv,label:“Instable”,color:C.red};
+if(cv>10) return {cv,label:“Variable”,color:C.amber};
+return {cv,label:“Stable”,color:C.green};
+}
+
+function calcSleepDebt(hist){
+let d=0;
+hist.slice(-7).forEach(x=>{if(x.sleep) d+=(x.sleep.total-7.5);});
+d=Math.round(d*10)/10;
+if(d<=-5) return {debt:d,label:d+“h”,color:C.red};
+if(d<=-2) return {debt:d,label:d+“h”,color:C.amber};
+return {debt:d,label:(d>0?”+”:””)+d+“h”,color:C.green};
+}
+
+function calcCircadian(hist){
+const beds=hist.filter(d=>d.sleep?.bed).map(d=>{
+const [h,m]=d.sleep.bed.split(”:”).map(Number);
+return h<12?h*60+m+1440:h*60+m;
+});
+if(beds.length<3) return {std:0,label:”—”,color:C.m};
+const mean=beds.reduce((a,b)=>a+b)/beds.length;
+const std=Math.round(Math.sqrt(beds.reduce((s,v)=>s+(v-mean)**2,0)/beds.length));
+if(std>60) return {std,label:“±”+std+“min”,color:C.red};
+if(std>30) return {std,label:“±”+std+“min”,color:C.amber};
+return {std,label:“±”+std+“min”,color:C.green};
+}
+
+function calcTemp(day){
+if(!day?.sleep||day.sleep.temp===undefined) return {val:0,label:”—”,color:C.m};
+const t=day.sleep.temp;
+if(t>=0.8) return {val:t,label:”+”+t+“°C ⚠”,color:C.red};
+if(t>=0.5) return {val:t,label:”+”+t+“°C”,color:C.amber};
+return {val:t,label:(t>=0?”+”:””)+t+“°C”,color:C.green};
+}
+
+function calcEWMA(hist){
+const loads=hist.filter(d=>d.train).map(d=>d.train.trimp||0);
+if(loads.length<7) return {val:0.95,label:“Optimal”,color:C.green};
+const lA=2/8, lC=2/29;
+let eA=loads[0], eC=loads[0];
+loads.forEach((l,i)=>{if(i>0){eA=l*lA+eA*(1-lA);eC=l*lC+eC*(1-lC);}});
+const val=eC>0?Math.round((eA/eC)*100)/100:0.95;
+if(val>1.5) return {val,label:“Danger”,color:C.red};
+if(val>1.3) return {val,label:“Spike”,color:C.amber};
+if(val>=0.8) return {val,label:“Optimal”,color:C.green};
+return {val,label:“Sous-charge”,color:C.cyan};
+}
+
+function calcMechLoad(day,hist){
+if(!day?.train) return {label:”—”,color:C.m};
+const t=day.train;
+const mech=(t.sprints||0)*10+(t.accel||0)*3+(t.decel||0)*4+(t.hiDist||0)*50;
+const mechs=hist.slice(-7).filter(d=>d.train).map(d=>{
+const tr=d.train; return (tr.sprints||0)*10+(tr.accel||0)*3+(tr.decel||0)*4+(tr.hiDist||0)*50;
+});
+const avg=mechs.length?mechs.reduce((a,b)=>a+b)/mechs.length:mech;
+if(avg>0&&mech/avg>1.4) return {label:“⚠ Spike”,color:C.red};
+if(avg>0&&mech/avg>1.2) return {label:“Élevée”,color:C.amber};
+return {label:“Normal”,color:C.green};
+}
+
+function calcWellness(day){
+if(!day?.wellness) return {score:0,hasData:false};
+const w=day.wellness;
+return {score:Math.round((((6-w.fatigue)+(6-w.soreness)+w.mood+(6-w.stress))/4/5)*100),hasData:true};
+}
+
+function calcRecovBal(hist){
+let bal=0;
+hist.slice(-14).forEach(d=>{
+bal+=(d.sleep?(d.sleep.deep||0)*15+(d.sleep.total||0)*5:0)-(d.train?(d.train.trimp||0)*0.2:0);
+});
+bal=Math.round(bal);
+if(bal<-20) return {val:bal,label:””+bal,color:C.red};
+if(bal<0) return {val:bal,label:””+bal,color:C.amber};
+return {val:bal,label:”+”+bal,color:C.green};
+}
+
+function calcConsecDeg(hist){
+let c=0;
+for(let i=hist.length-1;i>=0;i–){
+const r=calcReadiness(hist[i].sleep?hist[i]:null);
+if(r!==null&&r<65) c++; else break;
+}
+return c;
+}
+
+// WEIGHTED convergence — Sport Science fix
+function calcConvergence(ind){
+let score=0;
+// High-weight signals ×2
+if(ind.hrvTrend.slope<-1.5) score+=2;
+if(ind.ewma.val>1.3) score+=2;
+if(ind.painCount>=2) score+=2;
+if(ind.mechLoad.label?.includes(“Spike”)) score+=2;
+// Standard signals ×1
+if(ind.hrvCV.cv>12) score+=1;
+if(ind.temp.val>=0.5) score+=1;
+if(ind.sleepDebt.debt<=-3) score+=1;
+if(ind.circadian.std>45) score+=1;
+if(ind.wellness.hasData&&ind.wellness.score<45) score+=1;
+if(ind.consecDeg>=2) score+=1;
+if(ind.recovBal.val<-15) score+=1;
+if(ind.weightDelta&&Math.abs(ind.weightDelta)>=1.5) score+=1;
+if(ind.meds) score+=1; // masking
+// Low-weight signals ×0.5
+if(ind.alcohol) score+=0.5;
+if(ind.dehydrated) score+=0.5;
+if(ind.travel) score+=0.5;
+if(ind.poorNutrition) score+=0.5;
+const c=Math.round(score);
+if(c>=6) return {count:c,score,level:“🔴 CRITIQUE”,color:C.red};
+if(c>=4) return {count:c,score,level:“🟠 ALERTE”,color:C.amber};
+if(c>=2) return {count:c,score,level:“🟡 Surveillance”,color:C.amber};
+return {count:c,score,level:“🟢 OK”,color:C.green};
+}
+
+function detectFeelingGoodTrap(ind){
+if(!ind.wellness.hasData) return false;
+let obj=0;
+if(ind.hrvTrend.slope<-1) obj++;
+if(ind.temp.val>=0.4) obj++;
+if(ind.sleepDebt.debt<=-2) obj++;
+if(ind.hrvCV.cv>10) obj++;
+if(ind.consecDeg>=1) obj++;
+return ind.wellness.score>=70&&obj>=3;
+}
+
+// ENHANCED risk calc — includes sRPE and season position
+function calcRisk(ind){
+let r=5;
+if(ind.readiness!==null){
+if(ind.readiness<55) r+=15; else if(ind.readiness<65) r+=10; else if(ind.readiness<75) r+=4;
+}
+if(ind.hrvTrend.slope<-2) r+=12; else if(ind.hrvTrend.slope<-1) r+=6;
+if(ind.hrvCV.cv>15) r+=8; else if(ind.hrvCV.cv>10) r+=4;
+if(ind.temp.val>=0.8) r+=10; else if(ind.temp.val>=0.5) r+=5;
+if(ind.ewma.val>1.5) r+=10; else if(ind.ewma.val>1.3) r+=6;
+if(ind.mechLoad.label?.includes(“Spike”)) r+=8;
+if(ind.wellness.hasData&&ind.wellness.score<40) r+=8;
+if(ind.sleepDebt.debt<=-5) r+=6; else if(ind.sleepDebt.debt<=-2) r+=3;
+if(ind.circadian.std>60) r+=4;
+if(ind.painCount>=3) r+=10; else if(ind.painCount>=1) r+=4;
+if(ind.consecDeg>=3) r+=12; else if(ind.consecDeg>=2) r+=6;
+if(ind.recovBal.val<-20) r+=8;
+if(ind.weightDelta&&Math.abs(ind.weightDelta)>=1.5) r+=5;
+if(ind.alcohol) r+=4;
+if(ind.dehydrated) r+=3;
+if(ind.travel) r+=2;
+if(ind.meds) r+=3; // masking pain = higher real risk
+// sRPE contribution
+if(ind.srpe>700) r+=8; else if(ind.srpe>500) r+=4;
+// Season position modifier
+r+=seasonRiskMod(PLAYER.season.position);
+// Recidive — degressive by time (months)
+// Genou: 3 mois depuis retour (déc 2025) — risque élevé encore présent
+// Contusion genou: 10 jours (fév 2026) — tout récent
+r+=10; // genou (3 mois, <6 mois = risque très élevé)
+r+=3;  // cheville (17 mois)
+// Post-match 48h bonus risk
+if(ind.postMatch48h) r+=3;
+return Math.min(95,Math.max(5,r));
+}
+
+function genAction(ind){
+if(ind.readiness===null) return {text:“Données suspectes détectées. Vérifie ton capteur avant de t’entraîner.”,color:C.amber,icon:“⚠”};
+if(ind.readiness>=80&&ind.convergence.count===0) return {text:“Tu es au top. Donne tout aujourd’hui.”,color:C.green,icon:“⚡”};
+if(ind.readiness>=70&&ind.convergence.count<=2) return {text:“Bonne forme. Séance normale. Compression froide après.”,color:C.green,icon:“✓”};
+if(ind.readiness>=60) return {text:“Journée modérée. Contraste chaud/froid + caisson recommandés.”,color:C.amber,icon:“⚠”};
+if(ind.convergence.count>=6) return {text:“Jour de repos. Caisson 60min. Froid ciblé genou.”,color:C.red,icon:“🛑”};
+if(ind.convergence.count>=4) return {text:“Séance légère uniquement. Caisson + contraste après.”,color:C.red,icon:“⚠”};
+return {text:“Séance adaptée. Compression froide après. Dors 8h ce soir.”,color:C.amber,icon:“💡”};
+}
+
+function genRecovProtocol(ind){
+const p=[];
+if(ind.consecDeg>=2||ind.convergence.count>=4){
+p.push({equip:“hyperbaric”,proto:RECOV_EQUIP.hyperbaric.protocols.find(x=>x.id===“injury-prev”),priority:“haute”});
+p.push({equip:“hotcold”,proto:RECOV_EQUIP.hotcold.protocols.find(x=>x.id===“cold-knee”),priority:“haute”});
+} else if(ind.readiness<70||ind.recovBal.val<-10){
+p.push({equip:“hyperbaric”,proto:RECOV_EQUIP.hyperbaric.protocols.find(x=>x.id===“maintenance”),priority:“moyenne”});
+p.push({equip:“hotcold”,proto:RECOV_EQUIP.hotcold.protocols.find(x=>x.id===“contrast”),priority:“moyenne”});
+} else {
+p.push({equip:“hotcold”,proto:RECOV_EQUIP.hotcold.protocols.find(x=>x.id===“cold-post-train”),priority:“normale”});
+}
+return p;
+}
+
+function genCoachStatic(ind, hasData, isTrap){
+if(!hasData) return “Données démo. Tes données apparaîtront ici dès que tes capteurs sont connectés.”;
+const m=[];
+if(!ind.dataReliable) m.push(“📊 Moins de 5 jours de données — les tendances se précisent avec le temps. Continue le check-in chaque matin.”);
+if(isTrap&&ind.dataReliable) m.push(“⚠ Tu te sens bien, mais ton corps montre des signes de fatigue invisible. Souvent ce qui arrive avant une blessure.”);
+if(ind.convergence.count>=6) m.push(“🔴 Repos obligatoire. Ton corps envoie trop de signaux d’alerte.”);
+else if(ind.convergence.count>=4) m.push(“🟠 Plusieurs signaux de fatigue. Réduis l’intensité aujourd’hui.”);
+if(ind.hrvTrend.slope<-1.5) m.push(“Ton système nerveux récupère de moins en moins bien ces derniers jours.”);
+if(ind.temp.val>=0.5) m.push(“Ta température nocturne est élevée — possible inflammation en cours.”);
+if(ind.sleepDebt.debt<=-3) m.push(“Tu manques de sommeil depuis plusieurs jours. Couche-toi 30 min plus tôt ce soir.”);
+if(ind.ewma.val>1.3) m.push(“La charge d’entraînement a beaucoup augmenté récemment. Ton corps doit s’adapter.”);
+if(ind.srpe>500) m.push(`Charge subjective élevée (sRPE ${ind.srpe}). Ton ressenti confirme la fatigue des données.`);
+if(ind.consecDeg>=2) m.push(`Ton corps ne récupère pas bien depuis ${ind.consecDeg} jours consécutifs.`);
+if(ind.alcohol) m.push(“L’alcool d’hier fait chuter ta récupération de 48h. Hydrate-toi.”);
+if(ind.meds) m.push(“💊 Anti-douleur détecté — masquage des signaux. Ne force pas sur une douleur cachée.”);
+m.push(`${PLAYER.next.opp} dans ${PLAYER.next.days} jours — projection : ${ind.matchProj>=75?"tu seras prêt.":ind.matchProj>=60?"à surveiller de près.":"récupère maintenant pour être présent."}`);
+return m.join(” “);
+}
+
+// ── DATA HOOK ─────────────────────────────────────────────────
+function useData(){
+const [store,setStore]=useState(EMPTY);
+const [loading,setLoading]=useState(true);
+const reload=useCallback(async()=>{setLoading(true);setStore(await loadStore());setLoading(false);},[]);
+useEffect(()=>{reload();},[reload]);
+
+const today=todayKey();
+const td=store.days[today]||{};
+const hist=getHist(store,28);
+const hasData=!!td.sleep;
+
+const demoSleep={total:7.5,deep:1.7,rem:1.8,light:3.4,awake:0.6,hrv:65,rhr:52,spo2:98,temp:0.1,latency:10,respRate:14.0,bed:“23:00”,wake:“06:30”};
+const sleep=td.sleep||demoSleep;
+const anomalies=detectAnomalies(sleep);
+
+const readiness=calcReadiness(hasData?td:null);
+const hrvTrend=calcHRVTrend(hist);
+const hrvCV=calcHRVCV(hist);
+const sleepDebt=calcSleepDebt(hist);
+const circadian=calcCircadian(hist);
+const temp=calcTemp(hasData?td:null);
+const ewma=calcEWMA(hist);
+const mechLoad=calcMechLoad(td.train?td:null,hist);
+const wellness=calcWellness(hasData?td:null);
+const consecDeg=calcConsecDeg(hist);
+const recovBal=calcRecovBal(hist);
+const pvb=personalHRVBaseline(hist);
+const matchProj=Math.min(100,Math.max(0,Math.round((readiness||74)+hrvTrend.slope*PLAYER.next.days*0.6)));
+
+const tw=td.wellness||{};
+let weightDelta=0;
+if(tw.weight>0){
+const ws=hist.slice(-7).filter(d=>d.wellness?.weight>0).map(d=>d.wellness.weight);
+if(ws.length>=3) weightDelta=Math.round((tw.weight-ws.reduce((a,b)=>a+b)/ws.length)*10)/10;
+}
+
+const srpe=calcsRPE(td.wellness,td.train?.dur);
+const dataReliable=hist.filter(d=>d.sleep&&!detectAnomalies(d.sleep).length).length>=5;
+
+const ind={
+readiness,hrvTrend,hrvCV,sleepDebt,circadian,temp,ewma,mechLoad,wellness,consecDeg,recovBal,matchProj,
+painCount:(td.painZones||[]).length,painZones:td.painZones||[],
+weightDelta,dataReliable,srpe,pvb,anomalies,
+alcohol:!!tw.alcohol, meds:!!tw.meds, travel:!!tw.travel, matchDay:!!tw.matchDay,
+dehydrated:tw.water>0&&tw.water<1.5, poorNutrition:tw.nutrition>0&&tw.nutrition<=2, rpe:tw.rpe||0,
+};
+
+let pm48=false;
+for(let i=1;i<=2;i++){const d=new Date();d.setDate(d.getDate()-i);const dk=d.toISOString().slice(0,10);if(store.days[dk]?.wellness?.matchDay)pm48=true;}
+ind.postMatch48h=pm48;
+
+const convergence=calcConvergence(ind);
+const risk=calcRisk({…ind,convergence});
+const isTrap=detectFeelingGoodTrap(ind);
+const action=genAction({…ind,convergence});
+const coach=genCoachStatic({…ind,convergence},hasData,isTrap);
+
+let streak=0;
+for(let i=0;i<60;i++){const dt=new Date();dt.setDate(dt.getDate()-i);const dk=dt.toISOString().slice(0,10);if(store.days[dk]?.wellness)streak++;else break;}
+
+// Streak broken detection
+let streakBroken=false;
+if(streak===0){
+for(let i=1;i<=3;i++){const dt=new Date();dt.setDate(dt.getDate()-i);const dk=dt.toISOString().slice(0,10);if(store.days[dk]?.wellness){streakBroken=true;break;}}
+}
+
+// Days since last check-in
+let daysSinceCheckin=0;
+for(let i=1;i<=7;i++){const dt=new Date();dt.setDate(dt.getDate()-i);const dk=dt.toISOString().slice(0,10);if(store.days[dk]?.wellness)break;daysSinceCheckin=i;}
+
+const firstEverEntry=Object.keys(store.days).length===0;
+const recovProtocols=genRecovProtocol({…ind,convergence});
+
+const update=async(ns)=>{setStore(ns);await saveStore(ns);};
+const saveSleep=async(dt,d)=>update({…store,days:{…store.days,[dt]:{…store.days[dt]||{},sleep:d}}});
+const saveTrain=async(dt,d)=>update({…store,days:{…store.days,[dt]:{…store.days[dt]||{},train:d}}});
+const saveWellness=async(dt,d)=>update({…store,days:{…store.days,[dt]:{…store.days[dt]||{},wellness:d}}});
+const savePainZones=async(dt,z)=>update({…store,days:{…store.days,[dt]:{…store.days[dt]||{},painZones:z}}});
+const saveRecovery=async(dt,d)=>update({…store,days:{…store.days,[dt]:{…store.days[dt]||{},recovery:d}}});
+const toggleSim=async(val)=>update({…store,showSim:val});
+const completeOnboard=async()=>update({…store,onboarded:true});
+const resetAll=async()=>{setStore({…EMPTY});await clearStore();};
+
+const recovImpact=(()=>{for(let i=1;i<hist.length;i++){if(hist[i-1].recovery&&hist[i].sleep&&hist[i-1].sleep)return{delta:hist[i].sleep.hrv-hist[i-1].sleep.hrv,hasData:true};}return{delta:0,hasData:false};})();
+
+return {
+sleep,hist,store,hasData,streak,streakBroken,daysSinceCheckin,firstEverEntry,
+readiness,hrvTrend,hrvCV,sleepDebt,circadian,temp,ewma,mechLoad,wellness,
+consecDeg,recovBal,matchProj,convergence,risk,isTrap,action,coach,
+recovImpact,recovProtocols,showSim:store.showSim!==false,
+onboarded:!!store.onboarded,anomalies,pvb,srpe,
+painZones:td.painZones||[],
+saveSleep,saveTrain,saveWellness,savePainZones,saveRecovery,toggleSim,completeOnboard,resetAll,loading,
+};
+}
+
+// ── UI PRIMITIVES ─────────────────────────────────────────────
+const rCol=v=>v===null?C.amber:v>=75?C.green:v>=50?C.amber:C.red;
+const rLab=v=>v===null?”—”:v>=85?“Optimal”:v>=70?“Bon”:v>=50?“Modéré”:“Faible”;
+
+// Colorblind-friendly shape indicator
+function StateShape({value}){
+if(value===“ok”) return <span style={{fontSize:14,color:C.green}}>●</span>;
+if(value===“warn”) return <span style={{fontSize:14,color:C.amber}}>▲</span>;
+return <span style={{fontSize:14,color:C.red}}>■</span>;
+}
+
+function Cd({children,style,glow,onClick}){
+return <div onClick={onClick} style={{background:C.card,borderRadius:14,padding:14,border:“1px solid “+(glow||C.b),…style}}>{children}</div>;
+}
+
+function Ring({value,size=140,sw=8,color}){
+if(value===null) return <svg width={size} height={size}><circle cx={size/2} cy={size/2} r={(size-sw)/2} fill="none" stroke={C.bl} strokeWidth={sw}/><text x={size/2} y={size/2+4} textAnchor="middle" fill={C.amber} fontSize={size*0.12} fontFamily={F.b}>?</text></svg>;
+const r=(size-sw)/2, ci=2*Math.PI*r, o=ci-(value/100)*ci;
+return <svg width={size} height={size} style={{transform:“rotate(-90deg)”}}>
+<circle cx={size/2} cy={size/2} r={r} fill="none" stroke={C.bl} strokeWidth={sw}/>
+<circle cx={size/2} cy={size/2} r={r} fill=“none” stroke={color} strokeWidth={sw}
+strokeDasharray={ci} strokeDashoffset={o} strokeLinecap=“round”
+style={{transition:“stroke-dashoffset 1.5s ease”,filter:“drop-shadow(0 0 8px “+color+“60)”}}/>
+</svg>;
+}
+
+function Badge({text,color,bg}){
+return <span style={{fontSize:9,fontWeight:600,letterSpacing:0.6,textTransform:“uppercase”,padding:“3px 8px”,borderRadius:5,color,background:bg,fontFamily:F.b}}>{text}</span>;
+}
+
+function Inp({label,value,onChange,unit,type=“number”,step=“0.1”,placeholder}){
+return <div style={{marginBottom:10}}>
+<label style={{fontSize:8,fontWeight:600,color:C.d,fontFamily:F.b,display:“block”,marginBottom:3}}>{label}{unit?” (”+unit+”)”:””}</label>
+<input type={type} step={step} value={value} placeholder={placeholder} onChange={e=>onChange(e.target.value)}
+style={{width:“100%”,padding:“9px 10px”,borderRadius:9,border:“1px solid “+C.bl,background:C.s1,color:C.w,fontSize:13,fontFamily:F.m,outline:“none”,boxSizing:“border-box”}}/>
+
+  </div>;
+}
+
+function IndCard({label,value,color,target}){
+const [show,setShow]=useState(false);
+const exp=EXPLAIN[label];
+return <Cd style={{padding:8,textAlign:“center”,cursor:exp?“pointer”:“default”}} glow={show?color+“30”:C.b} onClick={()=>exp&&setShow(!show)}>
+<p style={{fontSize:6,letterSpacing:0.8,color:C.m,fontFamily:F.b,marginBottom:3}}>{label}</p>
+<span style={{fontSize:11,fontWeight:500,color,fontFamily:F.m}}>{value}</span>
+{target&&<p style={{fontSize:6,color:C.m,fontFamily:F.b,marginTop:1}}>{target}</p>}
+{show&&exp&&<div style={{marginTop:6,padding:6,borderRadius:6,background:C.s1,textAlign:“left”}}><p style={{fontSize:9,color:C.d,fontFamily:F.b,lineHeight:1.5}}>{exp}</p></div>}
+</Cd>;
+}
+
+// ── CHARTS ────────────────────────────────────────────────────
+function Sparkline({values,w=120,h=30,color,fill=false}){
+if(!values||values.length<2) return null;
+const mn=Math.min(…values),mx=Math.max(…values),rng=(mx-mn)||1;
+const pts=values.map((v,i)=>[((i/(values.length-1))*w).toFixed(1),(h-((v-mn)/rng)*(h-6)-3).toFixed(1)]);
+const path=pts.map((p,i)=>(i===0?“M”:“L”)+p[0]+”,”+p[1]).join(” “);
+const last=pts[pts.length-1];
+return <svg width={w} height={h} style={{overflow:“visible”}}>
+{fill&&<path d={path+” L”+w+”,”+h+” L0,”+h+” Z”} fill={color+“18”}/>}
+<path d={path} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+<circle cx={last[0]} cy={last[1]} r={2.5} fill={color} style={{filter:“drop-shadow(0 0 3px “+color+”)”}}/>
+</svg>;
+}
+
+function ReadinessHistory({hist}){
+const days=hist.slice(-21);
+if(days.length<3) return <div style={{height:56,display:“flex”,alignItems:“center”,justifyContent:“center”}}><span style={{fontSize:9,color:C.m,fontFamily:F.b}}>Continue le check-in pour voir l’historique</span></div>;
+return <div style={{display:“flex”,alignItems:“flex-end”,gap:2,height:56}}>
+{days.map((d,i)=>{
+const v=calcReadiness(d.sleep?d:null);
+const col=rCol(v);
+return <div key={i} style={{flex:1,display:“flex”,flexDirection:“column”,alignItems:“center”,justifyContent:“flex-end”,height:“100%”}}>
+<div style={{width:“100%”,borderRadius:“3px 3px 0 0”,height:Math.round(((v||0)/100)*50)+2,background:d.sleep?col+“cc”:C.b,transition:“height .5s ease “+i*15+“ms”}}/>
+</div>;
+})}
+
+  </div>;
+}
+
+function HRVChart({hist}){
+const data=hist.filter(d=>d.sleep?.hrv&&!detectAnomalies(d.sleep).length).slice(-7);
+if(data.length<2) return <div style={{height:60,display:“flex”,alignItems:“center”,justifyContent:“center”}}><span style={{fontSize:9,color:C.m,fontFamily:F.b}}>Enregistre des données Oura pour voir le graphique</span></div>;
+const values=data.map(d=>d.sleep.hrv),labels=data.map(d=>d.date.slice(5));
+const mn=Math.min(…values)-5,mx=Math.max(…values)+5,rng=mx-mn;
+const W=300,H=64;
+const pts=values.map((v,i)=>[((i/(values.length-1))*(W-16)+8).toFixed(1),(H-((v-mn)/rng)*(H-12)-6).toFixed(1)]);
+const path=pts.map((p,i)=>(i===0?“M”:“L”)+p[0]+”,”+p[1]).join(” “);
+const baselineY=(H-((55-mn)/rng)*(H-12)-6).toFixed(1);
+return <div>
+<svg width=“100%” viewBox={“0 0 “+W+” “+H} style={{overflow:“visible”,display:“block”}}>
+<line x1={0} y1={baselineY} x2={W} y2={baselineY} stroke={C.green+“35”} strokeWidth={1} strokeDasharray=“4,3”/>
+<text x={W-2} y={parseFloat(baselineY)-2} textAnchor=“end” fill={C.green+“80”} fontSize={7} fontFamily={F.b}>55ms</text>
+<path d={path+” L”+pts[pts.length-1][0]+”,”+H+” L”+pts[0][0]+”,”+H+” Z”} fill={C.blue+“12”}/>
+<path d={path} fill="none" stroke={C.blue} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
+{pts.map((p,i)=><circle key={i} cx={p[0]} cy={p[1]} r={3} fill={rCol(values[i]>=65?80:values[i]>=55?70:40)} style={{filter:“drop-shadow(0 0 3px “+rCol(values[i]>=65?80:50)+”)”}}>
+<title>{data[i].date}: {values[i]}ms</title>
+</circle>)}
+</svg>
+<div style={{display:“flex”,justifyContent:“space-between”,marginTop:3}}>{labels.map((l,i)=><span key={i} style={{fontSize:7,color:C.m,fontFamily:F.b}}>{l}</span>)}</div>
+
+  </div>;
+}
+
+function ACWRGauge({value}){
+const sz=110,sw=9,r=(sz-sw)/2,ci=Math.PI*r;
+const clamp=Math.min(2,Math.max(0,value));
+const off=ci-(clamp/2)*ci;
+const col=value>1.5?C.red:value>1.3?C.amber:value>=0.8?C.green:C.cyan;
+return <div style={{position:“relative”,width:sz,height:sz/2+26,margin:“0 auto”}}>
+<svg width={sz} height={sz/2+8}>
+<path d={“M “+(sw/2)+”,”+(sz/2)+” A “+r+”,”+r+” 0 0 1 “+(sz-sw/2)+”,”+(sz/2)} fill=“none” stroke={C.bl} strokeWidth={sw} strokeLinecap=“round”/>
+<path d={“M “+(sw/2)+”,”+(sz/2)+” A “+r+”,”+r+” 0 0 1 “+(sz-sw/2)+”,”+(sz/2)} fill=“none” stroke={col} strokeWidth={sw} strokeLinecap=“round” strokeDasharray={ci} strokeDashoffset={off} style={{filter:“drop-shadow(0 0 5px “+col+“70)”,transition:“stroke-dashoffset 1s ease”}}/>
+</svg>
+<div style={{position:“absolute”,bottom:0,left:0,right:0,textAlign:“center”}}>
+<span style={{fontSize:20,fontWeight:500,color:col,fontFamily:F.m}}>{value.toFixed(2)}</span>
+<p style={{fontSize:7,color:C.m,fontFamily:F.b,letterSpacing:1}}>ACWR</p>
+</div>
+
+  </div>;
+}
+
+function TrainBars({hist}){
+const data=hist.filter(d=>d.train).slice(-7);
+if(data.length<2) return <div style={{height:50,display:“flex”,alignItems:“center”,justifyContent:“center”}}><span style={{fontSize:9,color:C.m,fontFamily:F.b}}>Pas encore de données</span></div>;
+const values=data.map(d=>d.train.trimp||0),mx=Math.max(…values,150);
+return <div style={{display:“flex”,alignItems:“flex-end”,gap:4,height:50}}>
+{data.map((d,i)=>{const v=values[i],h=Math.round((v/mx)*44)+2,col=v>350?C.red:v>250?C.amber:C.green;
+return <div key={i} style={{flex:1,display:“flex”,flexDirection:“column”,alignItems:“center”,justifyContent:“flex-end”}}>
+<div style={{width:“100%”,borderRadius:“3px 3px 0 0”,height:h,background:col+“80”,transition:“height .5s ease “+i*40+“ms”,boxShadow:“0 -2px 6px “+col+“20”}}/>
+<span style={{fontSize:6,color:C.m,fontFamily:F.b,marginTop:2}}>{v}</span>
+</div>;})}
+
+  </div>;
+}
+
+// ── RECOVERY HORIZON (animated wave) ─────────────────────────
+function RecovH({v}){
+const col=rCol(v),ref=useRef(null);
+useEffect(()=>{
+const cvs=ref.current;if(!cvs)return;
+const ctx=cvs.getContext(“2d”),W=cvs.width,H=cvs.height;
+let t=0,af;
+const [rc,gc,bc]=[col.slice(1,3),col.slice(3,5),col.slice(5,7)].map(h=>parseInt(h,16));
+const draw=()=>{
+t+=0.008;ctx.clearRect(0,0,W,H);
+for(let L=0;L<3;L++){
+const amp=(15+(v||74)*0.2)*(1-L*0.3),freq=0.008+L*0.003,ph=t*(1+L*0.5)+L*1.5,by=H*(0.35+L*0.12);
+ctx.beginPath();ctx.moveTo(0,H);
+for(let x=0;x<=W;x+=2) ctx.lineTo(x,by+Math.sin(x*freq+ph)*amp+Math.sin(x*freq*2.3+ph*1.7)*amp*0.3);
+ctx.lineTo(W,H);ctx.closePath();
+const gd=ctx.createLinearGradient(0,by-amp,0,H);
+gd.addColorStop(0,“rgba(”+rc+”,”+gc+”,”+bc+”,”+(0.12-L*0.03)+”)”);
+gd.addColorStop(1,“rgba(”+rc+”,”+gc+”,”+bc+”,0)”);
+ctx.fillStyle=gd;ctx.fill();
+}
+af=requestAnimationFrame(draw);
+};draw();return()=>cancelAnimationFrame(af);
+},[v,col]);
+return <canvas ref={ref} width={480} height={110} style={{width:“100%”,height:110,display:“block”}}/>;
+}
+
+// ── BODY SCAN ZONES ───────────────────────────────────────────
+const ZONES=[
+{id:“back”,l:“Dos”,x:50,y:18},
+{id:“shoulder_l”,l:“Épaule G”,x:34,y:22},{id:“shoulder_r”,l:“Épaule D”,x:66,y:22},
+{id:“groin”,l:“Adducteur”,x:50,y:37},
+{id:“quad_l”,l:“Quad G”,x:38,y:45},{id:“quad_r”,l:“Quad D”,x:62,y:45},
+{id:“ham_l”,l:“Ischio G”,x:38,y:54},{id:“ham_r”,l:“Ischio D”,x:62,y:54},
+{id:“knee_l”,l:“Genou G”,x:39,y:64},{id:“knee_r”,l:“Genou D”,x:61,y:64,risk:true},
+{id:“calf_l”,l:“Mollet G”,x:39,y:74},{id:“calf_r”,l:“Mollet D”,x:61,y:74},
+{id:“ankle_l”,l:“Cheville G”,x:39,y:84,risk:true},{id:“ankle_r”,l:“Cheville D”,x:61,y:84},
+];
+
+// ── LIVE AI COACH ─────────────────────────────────────────────
+function CoachIA({data}){
+const [resp,setResp]=useState(””);
+const [loading,setLoading]=useState(false);
+const [err,setErr]=useState(null);
+const [asked,setAsked]=useState(false);
+
+const ask=async()=>{
+setLoading(true);setErr(null);setAsked(true);
+try{
+const r=await fetch(“https://api.anthropic.com/v1/messages”,{
+method:“POST”,headers:{“Content-Type”:“application/json”},
+body:JSON.stringify({
+model:“claude-sonnet-4-20250514”,
+max_tokens:1000,
+messages:[{role:“user”,content:`Tu es Coach IA REGERENT PRO pour ${PLAYER.name} ${PLAYER.last}, avant-centre ${PLAYER.club} (${PLAYER.age} ans, valeur ${PLAYER.value}M€).
+
+BILAN BIOMÉTRIQUE:
+• Readiness: ${data.readiness===null?“SUSPECT (données anormales)”:data.readiness+”/100 (”+rLab(data.readiness)+”)”}
+• HRV: ${data.sleep.hrv}ms — tendance 7j: ${data.hrvTrend.label}
+• FC repos: ${data.sleep.rhr} bpm | SpO2: ${data.sleep.spo2}%
+• Sommeil: ${data.sleep.total}h (profond: ${data.sleep.deep}h, REM: ${data.sleep.rem}h)
+• Température nocturne: ${data.temp.label}
+• Fréq. respiratoire: ${data.sleep.respRate}/min
+• ACWR: ${data.ewma.val} (${data.ewma.label})
+• sRPE dernière séance: ${data.srpe} (RPE × durée)
+• Signaux convergence: ${data.convergence.count} (${data.convergence.level})
+• Risque blessure: ${data.risk}%
+• Baseline HRV personnelle: ${data.pvb?data.pvb+“ms”:“en cours de calibration (< 14 jours)”}
+• Position de saison: ${PLAYER.season.position===“early”?“début”:PLAYER.season.position===“mid”?“milieu”:“fin”}
+• Match: ${PLAYER.next.opp} dans ${PLAYER.next.days} jours
+• Antécédents: Genou D (114j, retour 6 déc 2025 = 3 mois — récidive élevée), Contusion genou (12j, retour 23 fév 2026 = 10 jours — tout récent), Cheville (36j, 17 mois)
+${data.isTrap?“⚠ FEELING GOOD TRAP: ressenti positif mais signaux objectivement dégradés.”:””}
+${data.painZones.length>0?”• Douleurs signalées: “+data.painZones.join(”, “):””}
+${data.anomalies.length>0?“⚠ ANOMALIES CAPTEUR: “+data.anomalies.join(”; “):””}
+${data.consecDeg>=2?”• “+data.consecDeg+” jours consécutifs de récupération dégradée”:””}
+
+Message personnalisé en 4 phrases max. Langage direct de footballeur pro. Action concrète pour aujourd’hui (intensité séance + récup REGERENT si pertinent). Projection sur ${PLAYER.next.opp}.`}]
+})
+});
+const d=await r.json();
+setResp(d.content[0].text);
+}catch(e){setErr(“Connexion impossible. Vérifiez votre réseau.”);}
+setLoading(false);
+};
+
+return <Cd style={{background:“linear-gradient(135deg,”+C.card+”,rgba(59,130,246,0.05))”,marginBottom:12}}>
+<div style={{display:“flex”,alignItems:“center”,justifyContent:“space-between”,marginBottom:8}}>
+<div style={{display:“flex”,alignItems:“center”,gap:7}}>
+<span style={{fontSize:14}}>🤖</span>
+<span style={{fontSize:9,fontWeight:700,color:C.blue,letterSpacing:1,fontFamily:F.b}}>COACH IA</span>
+{!asked&&<Badge text="LIVE AI" color={C.green} bg={C.gD}/>}
+</div>
+{!asked&&<button onClick={ask} style={{padding:“7px 14px”,borderRadius:8,border:“none”,background:“linear-gradient(135deg,”+C.blue+”,”+C.cyan+”)”,color:”#fff”,fontSize:9,fontWeight:700,cursor:“pointer”,fontFamily:F.b,letterSpacing:0.5}}>Analyse IA →</button>}
+{asked&&!loading&&<button onClick={()=>{setAsked(false);setResp(””);}} style={{padding:“5px 10px”,borderRadius:7,border:“1px solid “+C.bl,background:“transparent”,color:C.m,fontSize:8,cursor:“pointer”,fontFamily:F.b}}>Refaire</button>}
+</div>
+{!asked&&<p style={{fontSize:10,color:C.m,fontFamily:F.b,lineHeight:1.75}}>{data.coach}</p>}
+{loading&&<div style={{display:“flex”,alignItems:“center”,gap:10,padding:“12px 0”}}>
+<div style={{width:18,height:18,borderRadius:“50%”,border:“2px solid “+C.bD,borderTopColor:C.blue,animation:“spin .8s linear infinite”}}/>
+<span style={{fontSize:10,color:C.m,fontFamily:F.b}}>Analyse biométrique en cours…</span>
+</div>}
+{resp&&!loading&&<p style={{fontSize:11,color:C.w,fontFamily:F.b,lineHeight:1.85,whiteSpace:“pre-line”}}>{resp}</p>}
+{err&&<div style={{padding:8,borderRadius:8,background:C.rD,marginTop:4}}><p style={{fontSize:9,color:C.red,fontFamily:F.b}}>{err}</p></div>}
+</Cd>;
+}
+
+// ── WEEKLY RECAP ──────────────────────────────────────────────
+function WeeklyRecap({hist}){
+if(hist.length<3) return null;
+const l7=hist.slice(-7);
+const sd=l7.filter(d=>d.sleep), hd=l7.filter(d=>d.sleep?.hrv);
+const avgR=Math.round(l7.reduce((s,d)=>s+((calcReadiness(d.sleep?d:null))||74),0)/l7.length);
+const avgS=sd.length?Math.round(sd.reduce((s,d)=>s+d.sleep.total,0)/sd.length*10)/10:0;
+const avgH=hd.length?Math.round(hd.reduce((s,d)=>s+d.sleep.hrv,0)/hd.length):0;
+const p7=hist.slice(-14,-7);
+const pR=p7.length?Math.round(p7.reduce((s,d)=>s+((calcReadiness(d.sleep?d:null))||74),0)/p7.length):avgR;
+const trend=avgR-pR;
+return <Cd style={{marginBottom:10,background:“linear-gradient(135deg,”+C.card+”,rgba(168,85,247,0.06))”}} glow={“rgba(168,85,247,0.1)”}>
+<div style={{display:“flex”,alignItems:“center”,justifyContent:“space-between”,marginBottom:8}}>
+<div style={{display:“flex”,alignItems:“center”,gap:6}}><span>📊</span><span style={{fontSize:9,fontWeight:700,color:C.purple,letterSpacing:1,fontFamily:F.b}}>RÉCAP 7 JOURS</span></div>
+{trend!==0&&<Badge text={trend>0?“↗ +”+trend:“↘ “+trend} color={trend>0?C.green:C.red} bg={trend>0?C.gD:C.rD}/>}
+</div>
+<div style={{display:“grid”,gridTemplateColumns:“1fr 1fr 1fr”,gap:8,marginBottom:8}}>
+{[[avgR,“Readiness moy.”,rCol(avgR)],[avgS+“h”,“Sommeil moy.”,C.blue],[avgH,“HRV moy.”,C.purple]].map(([v,l,c])=>(
+<div key={l} style={{textAlign:“center”}}><span style={{fontSize:20,color:c,fontFamily:F.h}}>{v}</span><p style={{fontSize:7,color:C.m,fontFamily:F.b}}>{l}</p></div>
+))}
+</div>
+<div style={{display:“flex”,justifyContent:“space-around”,padding:“8px 0”,borderTop:“1px solid “+C.bl}}>
+{[[l7.filter(d=>d.train).length,“Séances”,C.w],[l7.filter(d=>d.playerRecov?.length).length,“Récup”,C.cyan],[l7.filter(d=>d.painZones?.length).length,“Douleurs”,l7.some(d=>d.painZones?.length)?C.amber:C.green],[l7.filter(d=>d.wellness).length+”/7”,“Check-ins”,C.green]].map(([v,l,c])=>(
+<div key={l} style={{textAlign:“center”}}><span style={{fontSize:14,color:c,fontFamily:F.h}}>{v}</span><p style={{fontSize:7,color:C.m,fontFamily:F.b}}>{l}</p></div>
+))}
+</div>
+</Cd>;
+}
+
+// ── HOME SCREEN ───────────────────────────────────────────────
+function HomeScreen({data}){
+const d=data, s=d.sleep;
+const hrv7=d.hist.filter(h=>h.sleep?.hrv&&!detectAnomalies(h.sleep).length).slice(-7).map(h=>h.sleep.hrv);
+const daysSinceLast=d.daysSinceCheckin;
+const checkedInToday=!!d.store.days[todayKey()]?.wellness;
+const nbDays=d.hist.filter(h=>h.sleep&&!detectAnomalies(h.sleep).length).length;
+
+return <div>
+<div style={{position:“relative”}}>
+<RecovH v={d.readiness}/>
+<div style={{position:“absolute”,top:10,left:16,right:16,display:“flex”,justifyContent:“space-between”}}>
+<div>
+<div style={{display:“flex”,alignItems:“center”,gap:5}}>
+<span style={{fontSize:13,letterSpacing:5,color:C.w,fontFamily:F.h}}>REGERENT</span>
+<span style={{fontSize:7,fontWeight:700,letterSpacing:2,color:C.blue,padding:“2px 5px”,border:“1px solid “+C.bD,borderRadius:3,fontFamily:F.b}}>PRO</span>
+</div>
+<p style={{fontSize:8,color:C.m,letterSpacing:1,marginTop:2,fontFamily:F.b}}>INTELLIGENCE ENGINE</p>
+</div>
+<div style={{display:“flex”,alignItems:“center”,gap:6}}>
+{!d.hasData&&<Badge text="DÉMO" color={C.amber} bg={C.aD}/>}
+{d.hasData&&<Badge text="LIVE" color={C.green} bg={C.gD}/>}
+{d.streak>0&&<Badge text={d.streak+“j 🔥”} color={C.amber} bg={C.aD}/>}
+</div>
+</div>
+</div>
+
+```
+<div style={{padding:"0 16px"}}>
+  {/* Day 1 welcome — first-ever user */}
+  {d.firstEverEntry&&<Cd style={{marginBottom:10,background:"linear-gradient(135deg,"+C.card+",rgba(59,130,246,0.08))",padding:16}} glow={C.bD}>
+    <p style={{fontSize:7,color:C.blue,letterSpacing:2,fontFamily:F.b,marginBottom:6}}>BIENVENUE, {PLAYER.name.toUpperCase()}</p>
+    <p style={{fontSize:14,color:C.w,fontFamily:F.h,letterSpacing:1,marginBottom:6}}>Porte ta bague cette nuit.</p>
+    <p style={{fontSize:10,color:C.d,fontFamily:F.b,lineHeight:1.7}}>Demain matin, tes premières données seront ici. Fais le check-in chaque matin à ton réveil — 40 secondes, et on s'occupe du reste.</p>
+    <div style={{marginTop:10,padding:"8px 12px",borderRadius:8,background:C.bD,display:"flex",alignItems:"center",gap:8}}>
+      <span style={{fontSize:16}}>🫧</span>
+      <p style={{fontSize:9,color:C.blue,fontFamily:F.b}}>Séance de bienvenue recommandée : Caisson 45min + compression froide 20min.</p>
+    </div>
+  </Cd>}
+
+  {/* Streak broken notification */}
+  {d.streakBroken&&!d.firstEverEntry&&<div style={{padding:10,borderRadius:10,background:"rgba(245,158,11,0.06)",border:"1px solid "+C.amber+"25",marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
+    <span style={{fontSize:18}}>🔥</span>
+    <div>
+      <p style={{fontSize:10,fontWeight:700,color:C.amber,fontFamily:F.b}}>Streak interrompu</p>
+      <p style={{fontSize:9,color:C.d,fontFamily:F.b}}>Le check-in prend 40 secondes. Ton corps continue de collecter des données même sans toi — mais elles t'attendent.</p>
+    </div>
+  </div>}
+
+  {/* Re-engagement banner if 2+ days no check-in */}
+  {!checkedInToday&&daysSinceLast>=2&&!d.firstEverEntry&&<div style={{padding:10,borderRadius:10,background:C.bD,border:"1px solid "+C.blue+"25",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+    <div>
+      <p style={{fontSize:10,fontWeight:700,color:C.blue,fontFamily:F.b}}>Pas de check-in depuis {daysSinceLast} jours</p>
+      <p style={{fontSize:9,color:C.d,fontFamily:F.b}}>Les alertes de blessure nécessitent des données fraîches. 40 secondes ce matin.</p>
+    </div>
+    <span style={{fontSize:20}}>📲</span>
+  </div>}
+
+  {/* Sensor anomaly alert */}
+  {d.anomalies.length>0&&<div style={{padding:10,borderRadius:10,background:C.aD,border:"1px solid "+C.amber+"25",marginBottom:8}}>
+    <p style={{fontSize:10,fontWeight:700,color:C.amber,fontFamily:F.b,marginBottom:4}}>⚠ Données suspectes détectées</p>
+    {d.anomalies.map((a,i)=><p key={i} style={{fontSize:9,color:C.d,fontFamily:F.b}}>• {a}</p>)}
+    <p style={{fontSize:9,color:C.m,fontFamily:F.b,marginTop:4}}>Vérifie que ta bague est bien portée. Ces données n'influencent pas les alertes.</p>
+  </div>}
+
+  {/* Calibration bar — 5 first nights */}
+  {d.hasData&&nbDays<5&&<div style={{padding:10,borderRadius:10,background:C.bD,marginBottom:8}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+      <span style={{fontSize:9,fontWeight:700,color:C.blue,fontFamily:F.b}}>📊 Calibration du moteur</span>
+      <span style={{fontSize:9,color:C.d,fontFamily:F.b}}>{nbDays}/5 nuits</span>
+    </div>
+    <div style={{height:4,borderRadius:2,background:C.b}}>
+      <div style={{height:"100%",width:(nbDays/5*100)+"%",borderRadius:2,background:C.blue,transition:"width .5s"}}/>
+    </div>
+    <p style={{fontSize:8,color:C.m,fontFamily:F.b,marginTop:4}}>Les alertes deviennent fiables à partir de la 5e nuit. Continue !</p>
+  </div>}
+
+  {/* Action du jour */}
+  <p style={{fontSize:11,color:C.d,fontFamily:F.b}}>Bonjour</p>
+  <h1 style={{fontSize:24,letterSpacing:2,color:C.w,fontFamily:F.h,margin:"2px 0 4px"}}>{PLAYER.name}</h1>
+  <p style={{fontSize:9,color:C.m,fontFamily:F.b,marginBottom:10}}>{todayKey()} · {PLAYER.club}</p>
+
+  <div style={{padding:12,borderRadius:12,background:d.action.color===C.red?C.rD:d.action.color===C.amber?C.aD:C.gD,border:"1px solid "+d.action.color+"25",marginBottom:10}}>
+    <span style={{fontSize:16,marginRight:6}}>{d.action.icon}</span>
+    <span style={{fontSize:12,fontWeight:700,color:d.action.color,fontFamily:F.h,letterSpacing:0.5}}>{d.action.text}</span>
+  </div>
+
+  {d.isTrap&&<div style={{padding:12,borderRadius:12,background:"linear-gradient(135deg,"+C.rD+","+C.aD+")",border:"1px solid "+C.amber+"40",marginBottom:10}}>
+    <p style={{fontSize:11,color:C.amber,fontFamily:F.h,marginBottom:4,letterSpacing:1}}>⚠ ATTENTION</p>
+    <p style={{fontSize:10,color:C.d,fontFamily:F.b,lineHeight:1.5}}>Tu te sens bien, mais ton corps montre des signes de fatigue invisible. C'est souvent ce qui arrive avant une blessure. Réduis l'intensité aujourd'hui.</p>
+  </div>}
+
+  {d.convergence.count>=4&&<div style={{padding:10,borderRadius:10,background:d.convergence.color===C.red?C.rD:C.aD,marginBottom:10,textAlign:"center"}}>
+    <span style={{fontSize:12,color:d.convergence.color,fontFamily:F.h,letterSpacing:1}}>{d.convergence.count>=6?"🔴 Ton corps a besoin de repos":"🟠 Attention — fatigue détectée"}</span>
+  </div>}
+
+  {/* Match + Ring */}
+  <div style={{display:"flex",gap:8,marginBottom:10}}>
+    <Cd style={{flex:1,padding:12,background:"linear-gradient(135deg,"+C.card+","+C.bD+")"}} glow={C.bD}>
+      <p style={{fontSize:7,color:C.blue,letterSpacing:2,fontWeight:700,fontFamily:F.b}}>MATCH J-{PLAYER.next.days}</p>
+      <p style={{fontSize:18,letterSpacing:1,color:C.w,fontFamily:F.h,marginTop:2}}>{PLAYER.next.opp}</p>
+      <p style={{fontSize:9,color:C.d,fontFamily:F.b}}>{PLAYER.next.date} · {PLAYER.next.time}</p>
+      <div style={{marginTop:8,display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:9,color:C.m,fontFamily:F.b}}>Projection :</span>
+        <span style={{fontSize:14,color:rCol(d.matchProj),fontFamily:F.m}}>{d.matchProj}%</span>
+      </div>
+    </Cd>
+    <div style={{position:"relative",display:"flex",alignItems:"center"}}>
+      <Ring value={d.readiness} size={100} sw={7} color={rCol(d.readiness)}/>
+      <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+        <span style={{fontSize:34,color:rCol(d.readiness),fontFamily:F.h,lineHeight:1}}>{d.readiness===null?"?":d.readiness}</span>
+        <span style={{fontSize:8,color:C.d,letterSpacing:1,fontFamily:F.b}}>{rLab(d.readiness)}</span>
+      </div>
+    </div>
+  </div>
+
+  {/* Sommeil */}
+  <Cd style={{marginBottom:10}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div>
+        <p style={{fontSize:8,letterSpacing:2,color:C.m,fontFamily:F.b}}>SOMMEIL</p>
+        <div style={{display:"flex",alignItems:"baseline",gap:4,marginTop:4}}>
+          <span style={{fontSize:26,color:C.blue,fontFamily:F.h}}>{s.total}h</span>
+          <span style={{fontSize:10,color:C.d,fontFamily:F.b}}>{s.bed} → {s.wake}</span>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:12}}>
+        {[["Profond",s.deep,C.cyan],["REM",s.rem,C.purple],["Léger",s.light,C.blue]].map(([l,v,c])=>(
+          <div key={l} style={{textAlign:"center"}}><span style={{fontSize:14,color:c,fontFamily:F.h}}>{v}h</span><p style={{fontSize:6,color:C.m,fontFamily:F.b}}>{l}</p></div>
+        ))}
+      </div>
+    </div>
+    {hrv7.length>=3&&<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid "+C.b,display:"flex",alignItems:"center",gap:10}}>
+      <div><p style={{fontSize:6,color:C.m,fontFamily:F.b,letterSpacing:1,marginBottom:2}}>HRV 7J</p>
+        <span style={{fontSize:16,color:d.hrvTrend.color,fontFamily:F.m}}>{s.hrv}<span style={{fontSize:9}}>ms</span></span>
+        {d.pvb&&<p style={{fontSize:7,color:C.m,fontFamily:F.b}}>Base: {d.pvb}ms</p>}
+      </div>
+      <div style={{flex:1}}><Sparkline values={hrv7} w={160} h={28} color={d.hrvTrend.color} fill={true}/></div>
+      <Badge text={d.hrvTrend.label} color={d.hrvTrend.color} bg={d.hrvTrend.color+"18"}/>
+    </div>}
+  </Cd>
+
+  {/* État du corps — colorblind-friendly with shapes */}
+  <Cd style={{marginBottom:10}}>
+    <p style={{fontSize:8,letterSpacing:2,color:C.m,fontFamily:F.b,marginBottom:8}}>ÉTAT DU CORPS</p>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+      {[
+        ["Récupération",d.readiness>=75?"Bonne":d.readiness>=60?"Moyenne":"Faible",rCol(d.readiness),d.readiness>=75?"ok":d.readiness>=60?"warn":"danger"],
+        ["Fatigue nerv.",d.hrvTrend.slope>=0?"Faible":d.hrvTrend.slope>-1.5?"Modérée":"Élevée",d.hrvTrend.slope>=0?C.green:d.hrvTrend.slope>-1.5?C.amber:C.red,d.hrvTrend.slope>=0?"ok":d.hrvTrend.slope>-1.5?"warn":"danger"],
+        ["Inflammation",d.temp.val<0.5?"Aucune":d.temp.val<0.8?"Possible":"Détectée",d.temp.val<0.5?C.green:d.temp.val<0.8?C.amber:C.red,d.temp.val<0.5?"ok":d.temp.val<0.8?"warn":"danger"],
+      ].map(([l,v,c,shape])=>(
+        <div key={l} style={{textAlign:"center"}}>
+          <StateShape value={shape}/>
+          <span style={{fontSize:11,color:c,fontFamily:F.h,display:"block",marginTop:4}}>{v}</span>
+          <p style={{fontSize:7,color:C.m,fontFamily:F.b,marginTop:2}}>{l}</p>
+        </div>
+      ))}
+    </div>
+    {d.srpe>0&&<div style={{marginTop:8,paddingTop:8,borderTop:"1px solid "+C.b,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <span style={{fontSize:9,color:C.m,fontFamily:F.b}}>sRPE séance</span>
+      <span style={{fontSize:12,color:d.srpe>700?C.red:d.srpe>500?C.amber:C.green,fontFamily:F.m}}>{d.srpe}<span style={{fontSize:8,color:C.m}}>  RPE×min</span></span>
+    </div>}
+  </Cd>
+
+  {/* Recovery Protocol */}
+  <Cd style={{marginBottom:10,background:"linear-gradient(135deg,"+C.card+",rgba(6,182,212,0.06))"}} glow={"rgba(6,182,212,0.1)"}>
+    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}><span>💎</span><span style={{fontSize:9,fontWeight:700,color:C.cyan,letterSpacing:1,fontFamily:F.b}}>PROTOCOLE RÉCUPÉRATION</span></div>
+    {d.recovProtocols.map((rp,i)=>(
+      <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:8,borderRadius:8,background:C.s1,marginBottom:i<d.recovProtocols.length-1?6:0}}>
+        <div style={{width:28,height:28,borderRadius:7,background:rp.priority==="haute"?C.rD:rp.priority==="moyenne"?C.aD:C.bD,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>{rp.equip==="hyperbaric"?"🫧":"❄️"}</div>
+        <div style={{flex:1}}>
+          <div style={{display:"flex",alignItems:"center",gap:4}}>
+            <span style={{fontSize:10,fontWeight:600,color:C.w,fontFamily:F.b}}>{rp.proto.name}</span>
+            <span style={{fontSize:7,color:C.cyan,fontFamily:F.b}}>{rp.equip==="hyperbaric"?"1.5 ATA · "+rp.proto.dur+"min":rp.proto.mode+" · "+rp.proto.dur+"min"}</span>
+          </div>
+          <p style={{fontSize:8,color:C.d,fontFamily:F.b,marginTop:2,lineHeight:1.4}}>{rp.proto.note}</p>
+        </div>
+        <Badge text={rp.priority} color={rp.priority==="haute"?C.red:rp.priority==="moyenne"?C.amber:C.green} bg={rp.priority==="haute"?C.rD:rp.priority==="moyenne"?C.aD:C.gD}/>
+      </div>
+    ))}
+  </Cd>
+
+  <WeeklyRecap hist={d.hist}/>
+  <CoachIA data={d}/>
+</div>
+```
+
+  </div>;
+}
+
+// ── INTELLIGENCE SCREEN ───────────────────────────────────────
+function IntelligenceScreen({data}){
+const d=data;
+const hist21=d.hist.filter(h=>h.sleep&&!detectAnomalies(h.sleep).length).slice(-21);
+const avgR=hist21.length?Math.round(hist21.reduce((s,h)=>s+(calcReadiness(h)||74),0)/hist21.length):d.readiness||74;
+const trainLoad7=Math.round(d.hist.filter(x=>x.train).slice(-7).reduce((s,x)=>s+(x.train.trimp||0),0));
+
+const indicators=[
+{label:“HRV TREND”,value:d.hrvTrend.label,color:d.hrvTrend.color},
+{label:“HRV VARIAB.”,value:d.hrvCV.label,color:d.hrvCV.color},
+{label:“TEMP. NUIT”,value:d.temp.label,color:d.temp.color,target:”< +0.5°C”},
+{label:“RESP. NUIT”,value:d.sleep.respRate>0?d.sleep.respRate+”/min”:”—”,color:d.sleep.respRate>=17?C.red:d.sleep.respRate>=15?C.amber:C.green,target:”< 16/min”},
+{label:“DETTE SOMMEIL”,value:d.sleepDebt.label,color:d.sleepDebt.color},
+{label:“CIRCADIEN”,value:d.circadian.label,color:d.circadian.color},
+{label:“CHARGE MÉC.”,value:d.mechLoad.label,color:d.mechLoad.color},
+{label:“BILAN RÉCUP”,value:d.recovBal.label,color:d.recovBal.color},
+{label:“ACWR”,value:d.ewma.val.toFixed(2),color:d.ewma.color,target:“0.8–1.3”},
+{label:“sRPE”,value:d.srpe>0?d.srpe:”—”,color:d.srpe>700?C.red:d.srpe>500?C.amber:C.green,target:”< 500”},
+{label:“RISQUE”,value:d.risk+”%”,color:d.risk<20?C.green:d.risk<35?C.amber:C.red},
+{label:“CONVERGENCE”,value:d.convergence.count+” pts”,color:d.convergence.color},
+];
+
+return <div style={{padding:16}}>
+<div style={{display:“flex”,alignItems:“center”,justifyContent:“space-between”,marginBottom:14}}>
+<div>
+<h2 style={{fontSize:22,letterSpacing:3,color:C.w,fontFamily:F.h}}>INTELLIGENCE</h2>
+<p style={{fontSize:9,color:C.m,fontFamily:F.b}}>Biométrie · Charge · Risque · Prédiction</p>
+</div>
+<div style={{textAlign:“right”}}>
+<span style={{fontSize:28,color:rCol(d.readiness),fontFamily:F.h}}>{d.readiness===null?”?”:d.readiness}</span>
+<p style={{fontSize:7,color:C.m,fontFamily:F.b,letterSpacing:1}}>READINESS</p>
+</div>
+</div>
+
+```
+<Cd style={{marginBottom:10}}>
+  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+    <div>
+      <p style={{fontSize:8,letterSpacing:2,color:C.m,fontFamily:F.b}}>HISTORIQUE READINESS — 21J</p>
+      <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
+        <span style={{fontSize:9,color:C.d,fontFamily:F.b}}>Moyenne :</span>
+        <span style={{fontSize:14,color:rCol(avgR),fontFamily:F.m}}>{avgR}</span>
+        {d.pvb&&<span style={{fontSize:9,color:C.m,fontFamily:F.b}}>· Base HRV : {d.pvb}ms</span>}
+      </div>
+    </div>
+    <div style={{display:"flex",gap:6}}>
+      {[[C.green,"● OK"],[C.amber,"▲ Atten."],[C.red,"■ Danger"]].map(([c,l])=><div key={l} style={{display:"flex",alignItems:"center",gap:3}}><span style={{fontSize:9,color:c}}>{l.split(" ")[0]}</span><span style={{fontSize:7,color:C.m,fontFamily:F.b}}>{l.split(" ")[1]}</span></div>)}
+    </div>
+  </div>
+  <ReadinessHistory hist={d.hist}/>
+</Cd>
+
+<Cd style={{marginBottom:10}}>
+  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+    <div>
+      <p style={{fontSize:8,letterSpacing:2,color:C.m,fontFamily:F.b}}>HRV — 7 JOURS</p>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
+        <span style={{fontSize:20,color:C.blue,fontFamily:F.h}}>{d.sleep.hrv}<span style={{fontSize:9}}>ms</span></span>
+        <Badge text={d.hrvTrend.label} color={d.hrvTrend.color} bg={d.hrvTrend.color+"18"}/>
+      </div>
+    </div>
+    <div style={{textAlign:"right"}}>
+      <p style={{fontSize:7,color:C.m,fontFamily:F.b}}>Cible : 55–75ms</p>
+      <p style={{fontSize:7,color:C.m,fontFamily:F.b}}>FC repos : <span style={{color:C.w,fontFamily:F.m}}>{d.sleep.rhr}</span> bpm</p>
+      <p style={{fontSize:7,color:C.m,fontFamily:F.b}}>SpO2 : <span style={{color:d.sleep.spo2>=96?C.green:C.amber,fontFamily:F.m}}>{d.sleep.spo2}</span>%</p>
+    </div>
+  </div>
+  <HRVChart hist={d.hist}/>
+</Cd>
+
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+  <Cd style={{padding:12}}>
+    <p style={{fontSize:8,letterSpacing:2,color:C.m,fontFamily:F.b,marginBottom:6}}>ACWR — CHARGE</p>
+    <ACWRGauge value={d.ewma.val}/>
+    <p style={{fontSize:7,textAlign:"center",color:C.m,fontFamily:F.b,marginTop:4}}>0.8–1.3 zone optimale</p>
+    <p style={{fontSize:7,textAlign:"center",color:C.m,fontFamily:F.b}}>Saison : {PLAYER.season.position==="early"?"Début":PLAYER.season.position==="mid"?"Milieu":"Fin"}</p>
+  </Cd>
+  <Cd style={{padding:12}}>
+    <p style={{fontSize:8,letterSpacing:2,color:C.m,fontFamily:F.b,marginBottom:6}}>CHARGE 7J (TRIMP)</p>
+    <TrainBars hist={d.hist}/>
+    <div style={{marginTop:8,display:"flex",justifyContent:"space-between"}}>
+      <span style={{fontSize:7,color:C.m,fontFamily:F.b}}>Total 7j</span>
+      <span style={{fontSize:10,color:d.ewma.color,fontFamily:F.m}}>{trainLoad7}</span>
+    </div>
+    {d.srpe>0&&<div style={{marginTop:4,display:"flex",justifyContent:"space-between"}}>
+      <span style={{fontSize:7,color:C.m,fontFamily:F.b}}>sRPE</span>
+      <span style={{fontSize:10,color:d.srpe>700?C.red:d.srpe>500?C.amber:C.green,fontFamily:F.m}}>{d.srpe}</span>
+    </div>}
+  </Cd>
+</div>
+
+<p style={{fontSize:8,letterSpacing:2,color:C.m,fontFamily:F.b,marginBottom:8}}>INDICATEURS — APPUIE POUR EXPLICATIONS</p>
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:5,marginBottom:14}}>
+  {indicators.map(ind=><IndCard key={ind.label} {...ind}/>)}
+</div>
+
+<Cd style={{background:"linear-gradient(135deg,"+C.card+","+C.rD+")",marginBottom:10}}>
+  <p style={{fontSize:8,letterSpacing:2,color:C.m,fontFamily:F.b,marginBottom:10}}>ZONES À RISQUE — RÉCIDIVE</p>
+  <div style={{display:"flex",gap:8}}>
+    {[{zone:"Genou D",days:114,delay:"7 mois",risk:"Élevé",pct:85,col:C.red},{zone:"Cheville",days:36,delay:"17 mois",risk:"Modéré",pct:40,col:C.amber}].map(z=>(
+      <div key={z.zone} style={{flex:1,padding:10,borderRadius:10,background:C.s1}}>
+        <StateShape value={z.pct>60?"danger":"warn"}/>
+        <p style={{fontSize:12,color:z.col,fontFamily:F.h,marginTop:4,marginBottom:2}}>{z.zone}</p>
+        <p style={{fontSize:8,color:C.d,fontFamily:F.b}}>{z.days}j d'absence</p>
+        <p style={{fontSize:8,color:C.m,fontFamily:F.b,marginBottom:6}}>{z.delay}</p>
+        <div style={{height:4,borderRadius:2,background:C.b,marginBottom:4}}><div style={{height:"100%",width:z.pct+"%",borderRadius:2,background:z.col,transition:"width 1s ease"}}/></div>
+        <p style={{fontSize:7,color:z.col,fontFamily:F.b}}>Risque {z.risk} · {z.pct}%</p>
+      </div>
+    ))}
+  </div>
+</Cd>
+
+<Cd style={{background:"linear-gradient(135deg,rgba(59,130,246,0.08),rgba(6,182,212,0.05))"}}>
+  <p style={{fontSize:8,letterSpacing:2,color:C.m,fontFamily:F.b,marginBottom:8}}>PROJECTION MATCH</p>
+  <div style={{display:"flex",alignItems:"center",gap:12}}>
+    <div style={{position:"relative",display:"flex",alignItems:"center"}}>
+      <Ring value={d.matchProj} size={72} sw={5} color={rCol(d.matchProj)}/>
+      <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <span style={{fontSize:18,color:rCol(d.matchProj),fontFamily:F.h}}>{d.matchProj}</span>
+      </div>
+    </div>
+    <div>
+      <p style={{fontSize:14,color:C.w,fontFamily:F.h,letterSpacing:1}}>{PLAYER.next.opp}</p>
+      <p style={{fontSize:9,color:C.d,fontFamily:F.b}}>{PLAYER.next.date} · J-{PLAYER.next.days}</p>
+      <p style={{fontSize:9,color:rCol(d.matchProj),fontFamily:F.b,marginTop:4,fontWeight:600}}>
+        {d.matchProj>=75?"Pleine disponibilité prévue":d.matchProj>=60?"Participation probable, surveiller":d.matchProj<60?"Récupère maintenant":"—"}
+      </p>
+    </div>
+  </div>
+</Cd>
+```
+
+  </div>;
+}
+
+// ── CHECK-IN SCREEN ───────────────────────────────────────────
+function CheckInScreen({data}){
+const today=todayKey();
+const [well,setWell]=useState({fatigue:3,soreness:3,mood:3,stress:3});
+const [pains,setPains]=useState([]);
+const [weight,setWeight]=useState(””);
+const [extras,setExtras]=useState({water:0,nutrition:3,alcohol:false,meds:false,travel:false,nap:false,matchDay:false,rpe:0});
+const [step,setStep]=useState(“morning”);
+const [saving,setSaving]=useState(false);
+const [savedAnim,setSavedAnim]=useState(false);
+
+const emojiMap={fatigue:[“😴”,“😪”,“😐”,“💪”,“⚡”],soreness:[“🔴”,“🟠”,“🟡”,“🟢”,“✨”],mood:[“😞”,“😕”,“😐”,“😊”,“🔥”],stress:[“😰”,“😟”,“😐”,“😌”,“🧘”]};
+const labelMap={fatigue:“Fatigue”,soreness:“Douleurs”,mood:“Humeur”,stress:“Stress”};
+
+const save=async()=>{
+setSaving(true);
+const srpe=extras.rpe>0&&data.store.days[today]?.train?.dur?extras.rpe*data.store.days[today].train.dur:0;
+await data.saveWellness(today,{…well,weight:parseFloat(weight)||0,water:extras.water,nutrition:extras.nutrition,alcohol:extras.alcohol,meds:extras.meds,travel:extras.travel,nap:extras.nap,matchDay:extras.matchDay,rpe:extras.rpe,srpe});
+await data.savePainZones(today,pains);
+setSaving(false);setSavedAnim(true);
+setTimeout(()=>setStep(“done”),400);
+};
+
+if(step===“done”) return <div style={{padding:16,textAlign:“center”,paddingTop:40}}>
+<div style={{fontSize:52,marginBottom:10,animation:“bounceIn .5s ease”}}>✓</div>
+<h2 style={{fontSize:18,letterSpacing:2,color:C.green,fontFamily:F.h}}>Check-in enregistré</h2>
+<p style={{fontSize:11,color:C.d,fontFamily:F.b,marginTop:6}}>
+{weight?weight+“kg · “:””}{extras.water>0?extras.water+“L · “:””}Wellness {calcWellness({wellness:well}).score}%
+</p>
+<div style={{display:“flex”,gap:4,justifyContent:“center”,marginTop:8,flexWrap:“wrap”}}>
+{extras.alcohol&&<Badge text="🍷 Alcool" color={C.amber} bg={C.aD}/>}
+{extras.meds&&<Badge text="💊 Médicament" color={C.amber} bg={C.aD}/>}
+{extras.travel&&<Badge text="🚌 Déplacement" color={C.blue} bg={C.bD}/>}
+{extras.matchDay&&<Badge text="⚽ Match" color={C.green} bg={C.gD}/>}
+</div>
+{extras.rpe>0&&<div style={{marginTop:8,padding:“6px 12px”,borderRadius:8,background:C.bD,display:“inline-block”}}><span style={{fontSize:10,color:C.blue,fontFamily:F.b}}>sRPE calculé : {extras.rpe} × {data.store.days[today]?.train?.dur||”—”}min</span></div>}
+{data.streak>0&&<p style={{fontSize:10,color:C.amber,fontFamily:F.b,marginTop:8}}>🔥 Streak : {data.streak+1} jours</p>}
+<button onClick={()=>setStep(“morning”)} style={{marginTop:14,padding:“8px 20px”,borderRadius:8,border:“1px solid “+C.bl,background:C.card,color:C.w,fontSize:10,cursor:“pointer”,fontFamily:F.b}}>Refaire</button>
+
+  </div>;
+
+return <div style={{padding:16}}>
+<h2 style={{fontSize:18,letterSpacing:2,color:C.w,fontFamily:F.h,marginBottom:4}}>🧠 CHECK-IN</h2>
+<p style={{fontSize:10,color:C.d,fontFamily:F.b,marginBottom:12}}>40 secondes · Tout ce dont on a besoin</p>
+
+```
+<div style={{display:"flex",gap:3,marginBottom:14}}>
+  {[["morning","1. Matin"],["body","2. Corps"]].map(([id,n])=>(
+    <div key={id} style={{flex:1,padding:"7px 0",borderRadius:8,background:step===id?C.card:"transparent",border:"1px solid "+(step===id?C.bl:"transparent"),textAlign:"center"}}><span style={{fontSize:8,fontWeight:700,color:step===id?C.w:C.m,fontFamily:F.b}}>{n}</span></div>
+  ))}
+</div>
+
+{/* Save state indicator */}
+{saving&&<div style={{padding:8,borderRadius:8,background:C.bD,marginBottom:8,textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+  <div style={{width:14,height:14,borderRadius:"50%",border:"2px solid "+C.bD,borderTopColor:C.blue,animation:"spin .8s linear infinite"}}/>
+  <span style={{fontSize:10,color:C.blue,fontFamily:F.b}}>Sauvegarde en cours...</span>
+</div>}
+
+{step==="morning"&&<div>
+  {/* Weight */}
+  <Cd style={{marginBottom:8,padding:12}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>⚖️</span><div><p style={{fontSize:11,fontWeight:700,color:C.w,fontFamily:F.b}}>Poids à jeun</p><p style={{fontSize:8,color:C.m,fontFamily:F.b}}>Avant tout aliment ou boisson</p></div></div>
+      <div style={{display:"flex",alignItems:"center",gap:4}}><input type="number" step="0.1" value={weight} onChange={e=>setWeight(e.target.value)} placeholder="72.0" style={{width:65,padding:"7px 8px",borderRadius:8,border:"1px solid "+C.bl,background:C.s1,color:C.w,fontSize:15,fontWeight:600,fontFamily:F.m,outline:"none",textAlign:"center",boxSizing:"border-box"}}/><span style={{fontSize:9,color:C.m,fontFamily:F.b}}>kg</span></div>
+    </div>
+  </Cd>
+
+  {/* Wellness sliders */}
+  {["fatigue","soreness","mood","stress"].map(key=>(
+    <Cd key={key} style={{marginBottom:6,padding:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:10,fontWeight:700,color:C.w,fontFamily:F.b}}>{labelMap[key]}</span><span style={{fontSize:16}}>{emojiMap[key][well[key]-1]}</span></div>
+      <div style={{display:"flex",gap:4}}>{[1,2,3,4,5].map(v=><button key={v} onClick={()=>setWell({...well,[key]:v})} style={{flex:1,height:36,borderRadius:8,border:"none",cursor:"pointer",background:well[key]===v?(v<=2?C.rD:v===3?C.aD:C.gD):C.s1,fontSize:16,transition:"all .15s",boxShadow:well[key]===v?"0 0 8px rgba(0,0,0,0.2)":"none"}}>{emojiMap[key][v-1]}</button>)}</div>
+    </Cd>
+  ))}
+
+  {/* RPE for sRPE */}
+  <Cd style={{marginBottom:8,padding:12}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:18}}>🏋️</span><div><p style={{fontSize:11,fontWeight:700,color:C.w,fontFamily:F.b}}>Difficulté séance hier</p><p style={{fontSize:8,color:C.m,fontFamily:F.b}}>1 = repos · 10 = épuisant (pour calculer sRPE)</p></div></div>
+    <div style={{display:"flex",gap:3}}>{[1,2,3,4,5,6,7,8,9,10].map(v=>(
+      <button key={v} onClick={()=>setExtras({...extras,rpe:v})} style={{flex:1,height:30,borderRadius:7,border:"none",cursor:"pointer",background:extras.rpe===v?(v<=3?C.gD:v<=6?C.aD:C.rD):C.s1,color:extras.rpe===v?(v<=3?C.green:v<=6?C.amber:C.red):C.m,fontSize:9,fontWeight:800,fontFamily:F.h}}>
+        {v}
+      </button>
+    ))}</div>
+  </Cd>
+
+  {/* Water */}
+  <Cd style={{marginBottom:8,padding:12}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>💧</span><div><p style={{fontSize:11,fontWeight:700,color:C.w,fontFamily:F.b}}>Eau hier</p><p style={{fontSize:8,color:C.m,fontFamily:F.b}}>Litres dans la journée</p></div></div>
+      <div style={{display:"flex",gap:3}}>{[0.5,1,1.5,2,2.5,3].map(v=><button key={v} onClick={()=>setExtras({...extras,water:v})} style={{padding:"6px 7px",borderRadius:7,border:"none",cursor:"pointer",background:extras.water===v?C.blue:C.s1,color:extras.water===v?"#fff":C.m,fontSize:9,fontWeight:700,fontFamily:F.b}}>{v}L</button>)}</div>
+    </div>
+  </Cd>
+
+  {/* Nutrition */}
+  <Cd style={{marginBottom:8,padding:12}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:18}}>🍽</span><div><p style={{fontSize:11,fontWeight:700,color:C.w,fontFamily:F.b}}>Nutrition hier</p></div></div>
+    <div style={{display:"flex",gap:4}}>{[1,2,3,4,5].map(v=><button key={v} onClick={()=>setExtras({...extras,nutrition:v})} style={{flex:1,height:36,borderRadius:8,border:"none",cursor:"pointer",background:extras.nutrition===v?(v<=2?C.rD:v===3?C.aD:C.gD):C.s1,fontSize:16,transition:"all .15s"}}>{"🍕🍔😐🥗🥇"[v-1]}</button>)}</div>
+  </Cd>
+
+  {/* Toggles */}
+  <Cd style={{marginBottom:10,padding:12}}>
+    <p style={{fontSize:8,letterSpacing:2,color:C.m,fontFamily:F.b,marginBottom:8}}>SIGNALER</p>
+    <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+      {[{id:"alcohol",icon:"🍷",l:"Alcool hier"},{id:"meds",icon:"💊",l:"Médicament"},{id:"travel",icon:"🚌",l:"Déplacement"},{id:"nap",icon:"😴",l:"Sieste"},{id:"matchDay",icon:"⚽",l:"Jour de match"}].map(t=>(
+        <button key={t.id} onClick={()=>setExtras({...extras,[t.id]:!extras[t.id]})} style={{padding:"8px 12px",borderRadius:9,border:"1px solid "+(extras[t.id]?(t.id==="alcohol"||t.id==="meds"?C.amber:C.blue)+"40":C.bl),background:extras[t.id]?(t.id==="alcohol"||t.id==="meds"?C.aD:C.bD):C.s1,color:extras[t.id]?C.w:C.m,fontSize:9,fontWeight:600,cursor:"pointer",fontFamily:F.b,display:"flex",alignItems:"center",gap:4}}>
+          <span style={{fontSize:14}}>{t.icon}</span>{t.l}
+        </button>
+      ))}
+    </div>
+  </Cd>
+
+  <button onClick={()=>setStep("body")} style={{width:"100%",padding:13,borderRadius:12,border:"none",background:"linear-gradient(135deg,"+C.blue+","+C.cyan+")",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:F.b}}>Suivant → Corps</button>
+</div>}
+
+{step==="body"&&<div>
+  <p style={{fontSize:10,color:C.d,fontFamily:F.b,marginBottom:4}}>Appuie sur les zones douloureuses</p>
+  <p style={{fontSize:8,color:C.m,fontFamily:F.b,marginBottom:10}}>
+    {ZONES.filter(z=>z.risk).map(z=>z.l).join(" et ")} — zones à risque historique
+  </p>
+  {/* ENLARGED body scan with always-visible labels */}
+  <div style={{position:"relative",height:440,borderRadius:16,overflow:"hidden",background:"radial-gradient(ellipse at 50% 35%,rgba(59,130,246,0.06),transparent 70%)"}}>
+    {ZONES.map(z=>{
+      const active=pains.includes(z.id);
+      return <div key={z.id} style={{position:"absolute",left:z.x+"%",top:z.y+"%",transform:"translate(-50%,-50%)",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+        <button onClick={()=>setPains(active?pains.filter(p=>p!==z.id):[...pains,z.id])} style={{width:38,height:38,borderRadius:"50%",border:"2px solid "+(active?C.red:z.risk?C.amber+"70":"rgba(59,130,246,0.4)"),background:active?"rgba(239,68,68,0.25)":z.risk?"rgba(245,158,11,0.08)":"rgba(59,130,246,0.06)",cursor:"pointer",boxShadow:active?"0 0 16px rgba(239,68,68,0.5)":z.risk?"0 0 10px rgba(245,158,11,0.2)":"none",outline:"none",padding:0,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s"}}>
+          {active&&<div style={{width:10,height:10,borderRadius:"50%",background:C.red}}/>}
+          {!active&&z.risk&&<div style={{width:6,height:6,borderRadius:"50%",background:C.amber,opacity:0.7}}/>}
+        </button>
+        <span style={{fontSize:7,color:active?C.red:z.risk?C.amber:C.m,fontFamily:F.b,background:"rgba(4,8,15,0.7)",padding:"1px 4px",borderRadius:3,whiteSpace:"nowrap"}}>{z.l}</span>
+      </div>;
+    })}
+  </div>
+  {pains.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:8}}>
+    {pains.map(id=><Badge key={id} text={ZONES.find(z=>z.id===id)?.l||id} color={C.red} bg={C.rD}/>)}
+  </div>}
+  <div style={{display:"flex",gap:8,marginTop:12}}>
+    <button onClick={()=>setStep("morning")} style={{flex:1,padding:11,borderRadius:10,border:"1px solid "+C.bl,background:C.card,color:C.d,fontSize:11,cursor:"pointer",fontFamily:F.b}}>← Retour</button>
+    <button onClick={save} disabled={saving} style={{flex:2,padding:13,borderRadius:12,border:"none",background:"linear-gradient(135deg,"+C.green+","+C.cyan+")",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:F.b,opacity:saving?0.7:1}}>
+      {saving?"...":"💾 Sauvegarder"}
+    </button>
+  </div>
+</div>}
+```
+
+  </div>;
+}
+
+// ── SIMULATION SCREEN ─────────────────────────────────────────
+function SimScreen(){
+const [day,setDay]=useState(1);
+const keys=Object.keys(SIM_DAYS);
+const dk=keys[day-1];
+const dd=SIM_DAYS[dk];
+const hist=keys.slice(0,day).map(k=>({date:k,…SIM_DAYS[k]}));
+const readiness=calcReadiness(dd);
+const ewma=calcEWMA(hist);
+const temp=calcTemp(dd);
+const wellness=calcWellness(dd);
+const hrvTrend=calcHRVTrend(hist);
+const srpe=dd.wellness?.rpe&&dd.train?.dur?dd.wellness.rpe*dd.train.dur:0;
+
+const ind={readiness,hrvTrend,hrvCV:calcHRVCV(hist),sleepDebt:calcSleepDebt(hist),circadian:calcCircadian(hist),temp,ewma,mechLoad:calcMechLoad(dd.train?dd:null,hist),wellness,consecDeg:calcConsecDeg(hist),recovBal:calcRecovBal(hist),painCount:(dd.painZones||[]).length,srpe,weightDelta:0,dataReliable:true,alcohol:!!dd.wellness?.alcohol,meds:!!dd.wellness?.meds,travel:!!dd.wellness?.travel,dehydrated:dd.wellness?.water>0&&dd.wellness?.water<1.5,postMatch48h:false};
+const convergence=calcConvergence(ind);
+const risk=calcRisk({…ind,convergence});
+
+const statusColor=day<=4?C.green:day<=5?C.amber:C.red;
+const statusLabel=day<=4?“Normal”:day<=5?“⚡ Premiers signaux”:day<=7?“🟠 Dégradation”:day===8?“🔴 Zone critique”:“💥 Blessure imminente”;
+
+// Financial impact
+const missedMatchValue=day>=9?Math.round(PLAYER.value/23*23):0; // 23 matchs manqués
+const annualContractShare=day>=9?Math.round(350000*(114/365)):0; // ~350k€/an
+
+return <div style={{padding:16}}>
+<h2 style={{fontSize:18,letterSpacing:2,color:C.w,fontFamily:F.h,marginBottom:2}}>SIMULATION</h2>
+<p style={{fontSize:9,color:C.m,fontFamily:F.b,marginBottom:14}}>Scénario réel · 9 jours avant blessure genou · Août 2025</p>
+
+```
+<div style={{display:"flex",gap:3,marginBottom:12,flexWrap:"wrap"}}>
+  {keys.map((_,i)=>(
+    <button key={i} onClick={()=>setDay(i+1)} style={{width:34,height:34,borderRadius:8,border:"none",cursor:"pointer",background:day===i+1?(i<4?C.gD:i<6?C.aD:C.rD):C.s1,color:day===i+1?(i<4?C.green:i<6?C.amber:C.red):C.m,fontSize:12,fontFamily:F.h}}>J{i+1}</button>
+  ))}
+</div>
+
+<div style={{padding:10,borderRadius:10,background:statusColor+"15",border:"1px solid "+statusColor+"30",marginBottom:12,textAlign:"center"}}>
+  <span style={{fontSize:13,color:statusColor,fontFamily:F.h,letterSpacing:1}}>Jour {day} — {statusLabel}</span>
+</div>
+
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:5,marginBottom:10}}>
+  <Cd style={{padding:10,textAlign:"center"}}>
+    <p style={{fontSize:7,color:C.m,fontFamily:F.b}}>READINESS</p>
+    <span style={{fontSize:28,color:rCol(readiness),fontFamily:F.h}}>{readiness===null?"?":readiness}</span>
+  </Cd>
+  <Cd style={{padding:10,textAlign:"center"}}>
+    <p style={{fontSize:7,color:C.m,fontFamily:F.b}}>RISQUE</p>
+    <span style={{fontSize:28,color:risk<20?C.green:risk<35?C.amber:C.red,fontFamily:F.h}}>{risk}%</span>
+  </Cd>
+  <Cd style={{padding:10,textAlign:"center"}}>
+    <p style={{fontSize:7,color:C.m,fontFamily:F.b}}>CONVERGENCE</p>
+    <span style={{fontSize:12,color:convergence.color,fontFamily:F.h}}>{convergence.level}</span>
+  </Cd>
+</div>
+
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:4,marginBottom:10}}>
+  <Cd style={{padding:6,textAlign:"center"}}><p style={{fontSize:5,color:C.m,fontFamily:F.b}}>HRV</p><span style={{fontSize:12,color:dd.sleep.hrv<45?C.red:dd.sleep.hrv<55?C.amber:C.green,fontFamily:F.m}}>{dd.sleep.hrv}</span></Cd>
+  <Cd style={{padding:6,textAlign:"center"}}><p style={{fontSize:5,color:C.m,fontFamily:F.b}}>TEMP</p><span style={{fontSize:12,color:temp.color,fontFamily:F.m}}>{temp.label}</span></Cd>
+  <Cd style={{padding:6,textAlign:"center"}}><p style={{fontSize:5,color:C.m,fontFamily:F.b}}>SOMMEIL</p><span style={{fontSize:12,color:dd.sleep.total<6?C.red:C.blue,fontFamily:F.m}}>{dd.sleep.total}h</span></Cd>
+  <Cd style={{padding:6,textAlign:"center"}}><p style={{fontSize:5,color:C.m,fontFamily:F.b}}>sRPE</p><span style={{fontSize:12,color:srpe>700?C.red:srpe>500?C.amber:C.green,fontFamily:F.m}}>{srpe||"—"}</span></Cd>
+  <Cd style={{padding:6,textAlign:"center"}}><p style={{fontSize:5,color:C.m,fontFamily:F.b}}>WELLNESS</p><span style={{fontSize:12,color:wellness.hasData?rCol(wellness.score):C.m,fontFamily:F.m}}>{wellness.score}%</span></Cd>
+</div>
+
+{(dd.painZones||[]).length>0&&<div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
+  <span style={{fontSize:9,color:C.red,fontFamily:F.b}}>Douleurs :</span>
+  {dd.painZones.map(id=><Badge key={id} text={ZONES.find(z=>z.id===id)?.l||id} color={C.red} bg={C.rD}/>)}
+</div>}
+
+{dd.wellness&&<div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap"}}>
+  {dd.wellness.weight&&<Badge text={"⚖️ "+dd.wellness.weight+"kg"} color={C.w} bg={C.b}/>}
+  {dd.wellness.water>0&&<Badge text={"💧 "+dd.wellness.water+"L"} color={dd.wellness.water<1.5?C.red:C.green} bg={dd.wellness.water<1.5?C.rD:C.gD}/>}
+  {dd.wellness.alcohol&&<Badge text="🍷 Alcool" color={C.red} bg={C.rD}/>}
+  {dd.wellness.meds&&<Badge text="💊 Anti-douleur" color={C.amber} bg={C.aD}/>}
+  {dd.wellness.travel&&<Badge text="🚌 Déplacement" color={C.blue} bg={C.bD}/>}
+  {srpe>0&&<Badge text={"🏋️ sRPE "+srpe} color={srpe>700?C.red:srpe>500?C.amber:C.green} bg={srpe>700?C.rD:srpe>500?C.aD:C.gD}/>}
+</div>}
+
+{day>=5&&<Cd style={{background:"linear-gradient(135deg,"+C.card+","+(day>=8?C.rD:day>=6?C.rD:C.aD)+")",marginBottom:10}}>
+  <p style={{fontSize:11,fontWeight:700,color:day>=8?C.red:day>=6?C.red:C.amber,fontFamily:F.h,marginBottom:4,letterSpacing:1}}>
+    {day===5&&"⚡ Alcool + hydratation faible + HRV baisse + sRPE élevé. REGERENT aurait alerté ce soir."}
+    {day===6&&"⚠ ALERTE GÉNÉRÉE. HRV chute + température + douleur genou + anti-douleur = masquage. Arrêt recommandé."}
+    {day===7&&"🟠 Alerte confirmée. Poids -1.4kg (déshydratation) + HRV effondré + 2 zones de douleur. Repos immédiat."}
+    {day===8&&"🔴 CRITIQUE. Tous les voyants rouges. sRPE 820 hier. Blessure dans 24h si poursuite."}
+    {day===9&&"💥 Sans REGERENT : 114j d'absence. 23 matchs. Avec REGERENT : 3j de repos préventif. 0 match manqué."}
+  </p>
+</Cd>}
+
+{day===9&&<Cd style={{marginBottom:10}}>
+  <p style={{fontSize:8,letterSpacing:2,color:C.m,fontFamily:F.b,marginBottom:12}}>IMPACT FINANCIER</p>
+  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+    <div style={{textAlign:"center",padding:12,borderRadius:10,background:C.rD}}>
+      <p style={{fontSize:9,color:C.red,fontFamily:F.b,marginBottom:4}}>Sans REGERENT</p>
+      <p style={{fontSize:22,color:C.red,fontFamily:F.h}}>114j</p>
+      <p style={{fontSize:8,color:C.d,fontFamily:F.b}}>d'absence</p>
+      <p style={{fontSize:18,color:C.red,fontFamily:F.h,marginTop:6}}>~{Math.round(PLAYER.value/23*23)}M€</p>
+      <p style={{fontSize:7,color:C.d,fontFamily:F.b}}>valeur matchs manqués</p>
+    </div>
+    <div style={{textAlign:"center",padding:12,borderRadius:10,background:C.gD}}>
+      <p style={{fontSize:9,color:C.green,fontFamily:F.b,marginBottom:4}}>Avec REGERENT</p>
+      <p style={{fontSize:22,color:C.green,fontFamily:F.h}}>3j</p>
+      <p style={{fontSize:8,color:C.d,fontFamily:F.b}}>de repos préventif</p>
+      <p style={{fontSize:18,color:C.green,fontFamily:F.h,marginTop:6}}>0€</p>
+      <p style={{fontSize:7,color:C.d,fontFamily:F.b}}>de perte</p>
+    </div>
+  </div>
+  <div style={{marginTop:10,padding:8,borderRadius:8,background:C.s1,textAlign:"center"}}>
+    <p style={{fontSize:10,color:C.w,fontFamily:F.b}}>
+      REGERENT à <span style={{color:C.green}}>49€/mois</span> · ROI en 1 jour de présence évitée
+    </p>
+  </div>
+</Cd>}
+```
+
+  </div>;
+}
+
+// ── PASSPORT SCREEN ───────────────────────────────────────────
+function PassportScreen(){
+const pp=PLAYER.passport;
+const [shared,setShared]=useState(false);
+const [recommended,setRecommended]=useState(false);
+
+const handleShare=()=>{
+const msg=`📊 Mon rapport REGERENT PRO — ${new Date().toLocaleDateString("fr-FR")}\n\n🏃 ${PLAYER.name} ${PLAYER.last} · ${PLAYER.club} · #${PLAYER.num}\n📈 Readiness aujourd'hui : [voir app]\n⚡ ${PLAYER.season.apps} matchs · ${PLAYER.season.g} buts · ${PLAYER.season.a} passes\n\n🔒 Données biométriques partagées avec mon agent via REGERENT PRO.\nContact : [email agent]`;
+if(navigator.share){navigator.share({title:“Rapport REGERENT PRO”,text:msg}).catch(()=>{});}
+setShared(true);
+setTimeout(()=>setShared(false),3000);
+};
+
+const handleRecommend=()=>{
+const msg=`Hey,\n\nJ'utilise REGERENT PRO pour suivre ma récupération et prévenir les blessures. Ça m'a déjà évité plusieurs semaines d'absence.\n\nL'app analyse mon sommeil (bague Oura), ma charge d'entraînement et mon ressenti pour me donner une action concrète chaque matin.\n\nTu devrais l'essayer — surtout avec l'historique de blessures qu'on accumule.\n\n👉 regerent.com/pro\n\n— ${PLAYER.name}`;
+if(navigator.share){navigator.share({title:“REGERENT PRO”,text:msg}).catch(()=>{});}
+setRecommended(true);
+setTimeout(()=>setRecommended(false),3000);
+};
+
+return <div style={{padding:16}}>
+<Cd style={{textAlign:“center”,padding:20,background:“linear-gradient(135deg,”+C.card+”,”+C.bD+”)”,marginBottom:12}} glow={C.bD}>
+<p style={{fontSize:8,letterSpacing:3,color:C.blue,fontFamily:F.b,marginBottom:8}}>PASSEPORT BIOMÉTRIQUE</p>
+<div style={{width:56,height:56,borderRadius:14,background:C.bD,margin:“0 auto 8px”,display:“flex”,alignItems:“center”,justifyContent:“center”}}>
+<span style={{fontSize:24,color:C.blue,fontFamily:F.h}}>{PLAYER.num}</span>
+</div>
+<h2 style={{fontSize:20,letterSpacing:1,color:C.w,fontFamily:F.h}}>{PLAYER.name} {PLAYER.last}</h2>
+<p style={{fontSize:10,color:C.d,fontFamily:F.b,marginTop:2}}>{PLAYER.pos} · {PLAYER.age} ans · {PLAYER.height} · {PLAYER.weight}</p>
+<p style={{fontSize:9,color:C.d,fontFamily:F.b,marginTop:2}}>{PLAYER.nat} / {PLAYER.nat2}</p>
+<div style={{display:“flex”,gap:6,justifyContent:“center”,marginTop:8,flexWrap:“wrap”}}>
+<Badge text="Premier League" color={C.purple} bg={C.pD}/>
+<Badge text="Champions League" color={C.amber} bg={C.aD}/>
+<Badge text={pp.intl.caps+” sél.”} color={C.cyan} bg={C.cD}/>
+<Badge text={PLAYER.value+“M€”} color={C.green} bg={C.gD}/>
+</div>
+</Cd>
+
+```
+{/* Business actions */}
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+  <button onClick={handleShare} style={{padding:"12px 8px",borderRadius:12,border:"1px solid "+C.bl,background:shared?C.gD:C.card,color:shared?C.green:C.w,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:F.b,display:"flex",flexDirection:"column",alignItems:"center",gap:4,transition:"all .3s"}}>
+    <span style={{fontSize:20}}>📤</span>
+    {shared?"Partagé ✓":"Partager readiness\navec mon agent"}
+  </button>
+  <button onClick={handleRecommend} style={{padding:"12px 8px",borderRadius:12,border:"1px solid "+C.bl,background:recommended?C.bD:C.card,color:recommended?C.blue:C.w,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:F.b,display:"flex",flexDirection:"column",alignItems:"center",gap:4,transition:"all .3s"}}>
+    <span style={{fontSize:20}}>👥</span>
+    {recommended?"Envoyé ✓":"Recommander à\nun coéquipier"}
+  </button>
+</div>
+
+<p style={{fontSize:8,letterSpacing:2,color:C.m,marginBottom:6,fontFamily:F.b}}>PARCOURS</p>
+{pp.clubs.map((c,i)=>(
+  <Cd key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5,padding:10}}>
+    <div>
+      <p style={{fontSize:12,fontWeight:700,color:C.w,fontFamily:F.h}}>{c.name}</p>
+      <p style={{fontSize:9,color:C.d,fontFamily:F.b}}>{c.yr}{c.youth?" · Formation":""}</p>
+    </div>
+    {!c.youth&&<span style={{fontSize:16,color:C.blue,fontFamily:F.h}}>{c.apps}</span>}
+  </Cd>
+))}
+
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:5,marginTop:10,marginBottom:12}}>
+  {[["Matchs",pp.total.apps,C.w],["Buts",pp.total.goals,C.blue],["Sélections",pp.intl.caps,C.cyan]].map(([l,v,c])=>(
+    <Cd key={l} style={{textAlign:"center",padding:10}}>
+      <span style={{fontSize:22,color:c,fontFamily:F.h}}>{v}</span>
+      <p style={{fontSize:7,color:C.m,fontFamily:F.b}}>{l}</p>
+    </Cd>
+  ))}
+</div>
+
+<p style={{fontSize:8,letterSpacing:2,color:C.m,marginBottom:6,fontFamily:F.b}}>HISTORIQUE BLESSURES</p>
+{pp.injuries.map((inj,i)=>(
+  <Cd key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5,padding:10,border:"1px solid "+(inj.highlight?C.red+"25":C.b)}}>
+    <div style={{display:"flex",alignItems:"center",gap:8}}>
+      <StateShape value={inj.highlight?"danger":"warn"}/>
+      <div>
+        <p style={{fontSize:11,fontWeight:600,color:C.w,fontFamily:F.h}}>{inj.type}</p>
+        <p style={{fontSize:9,color:C.d,fontFamily:F.b}}>{inj.date} · {inj.missed} matchs · {inj.zone}</p>
+      </div>
+    </div>
+    <Badge text={inj.days+"j"} color={inj.highlight?C.red:C.amber} bg={inj.highlight?C.rD:C.aD}/>
+  </Cd>
+))}
+
+<Cd style={{textAlign:"center",padding:14,marginTop:8,background:"linear-gradient(135deg,"+C.card+","+C.rD+")"}}>
+  <p style={{fontSize:32,color:C.red,fontFamily:F.h}}>126</p>
+  <p style={{fontSize:10,color:C.d,fontFamily:F.b}}>jours d'absence cette saison</p>
+  <p style={{fontSize:9,color:C.m,fontFamily:F.b,marginTop:4}}>26 matchs manqués · Valeur transfert {PLAYER.value}M€ · Risque récidive intégré</p>
+</Cd>
+```
+
+  </div>;
+}
+
+// ── RECOVERY SCREEN ───────────────────────────────────────────
+function RecovScreen({data}){
+const today=todayKey();
+const [sel,setSel]=useState([]);
+const [saved,setSaved]=useState(false);
+const [rpe,setRpe]=useState(0);
+const methods=[
+{id:“hyperbaric”,icon:“🫧”,name:“Caisson Hyperbare”,desc:“REGERENT · 1.5 ATA”,durs:[30,45,60],regerent:true},
+{id:“hotcold”,icon:“❄️”,name:“Chaud/Froid Compression”,desc:“REGERENT Recovery System”,durs:[15,20,25,30],regerent:true},
+{id:“sauna”,icon:“🔥”,name:“Sauna”,desc:“Séance chaleur”,durs:[10,15,20,30]},
+{id:“cold_bath”,icon:“🧊”,name:“Bain froid”,desc:“Immersion froide”,durs:[3,5,8,10]},
+{id:“massage”,icon:“💆”,name:“Massage / Kiné”,desc:“Séance avec le kiné”,durs:[20,30,45,60]},
+{id:“stretching”,icon:“🧘”,name:“Étirements”,desc:“Stretching actif”,durs:[10,15,20,30]},
+{id:“compression”,icon:“🦵”,name:“Bottes compression”,desc:“Pressothérapie jambes”,durs:[15,20,30,45]},
+{id:“pool”,icon:“🏊”,name:“Piscine / Aqua”,desc:“Récup aquatique”,durs:[15,20,30]},
+];
+const toggle=(id)=>{const s=sel.find(x=>x.id===id);setSel(s?sel.filter(x=>x.id!==id):[…sel,{id,dur:methods.find(m=>m.id===id).durs[1]}]);};
+const setDur=(id,dur)=>setSel(sel.map(s=>s.id===id?{…s,dur}:s));
+const save=async()=>{
+const ex=data.store.days[today]?.playerRecov||[];
+const nr=[…ex,…sel.map(s=>({…s,time:new Date().toLocaleTimeString(“fr-FR”,{hour:“2-digit”,minute:“2-digit”})}))];
+const dd={…(data.store.days[today]||{}),playerRecov:nr};
+if(rpe>0)dd.wellness={…(dd.wellness||{}),rpe};
+const ns={…data.store,days:{…data.store.days,[today]:dd}};
+await saveStore(ns);setSaved(true);setSel([]);
+};
+const todayR=data.store.days[today]?.playerRecov||[];
+if(saved&&todayR.length>0) return <div style={{padding:16}}>
+<h2 style={{fontSize:18,letterSpacing:2,color:C.w,fontFamily:F.h,marginBottom:14}}>💎 RÉCUPÉRATION</h2>
+{todayR.map((r,i)=>{const m=methods.find(mt=>mt.id===r.id);return <Cd key={i} style={{display:“flex”,alignItems:“center”,gap:10,marginBottom:6,padding:12}}>
+<span style={{fontSize:24}}>{m?m.icon:“✓”}</span>
+<div style={{flex:1}}><p style={{fontSize:12,fontWeight:700,color:C.w,fontFamily:F.h}}>{m?m.name:r.id}</p><p style={{fontSize:9,color:C.d,fontFamily:F.b}}>{r.dur}min · {r.time}</p></div>
+<div style={{width:8,height:8,borderRadius:“50%”,background:C.green}}/>
+</Cd>;})}
+<button onClick={()=>setSaved(false)} style={{width:“100%”,padding:12,borderRadius:10,border:“1px solid “+C.bl,background:C.card,color:C.w,fontSize:11,cursor:“pointer”,fontFamily:F.b,marginTop:10}}>+ Ajouter une séance</button>
+
+  </div>;
+
+return <div style={{padding:16}}>
+<h2 style={{fontSize:18,letterSpacing:2,color:C.w,fontFamily:F.h,marginBottom:4}}>💎 RÉCUPÉRATION</h2>
+<p style={{fontSize:10,color:C.d,fontFamily:F.b,marginBottom:12}}>Protocoles recommandés + ton catalogue</p>
+
+```
+{data.recovProtocols.length>0&&<Cd style={{marginBottom:10,background:"linear-gradient(135deg,"+C.card+",rgba(6,182,212,0.06))"}} glow={"rgba(6,182,212,0.1)"}>
+  <p style={{fontSize:8,letterSpacing:2,color:C.cyan,fontFamily:F.b,marginBottom:8}}>💡 RECOMMANDÉ AUJOURD'HUI</p>
+  {data.recovProtocols.map((rp,i)=>(
+    <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:i<data.recovProtocols.length-1?"1px solid "+C.b:"none"}}>
+      <span style={{fontSize:16}}>{rp.equip==="hyperbaric"?"🫧":"❄️"}</span>
+      <div style={{flex:1}}><span style={{fontSize:10,fontWeight:600,color:C.w,fontFamily:F.b}}>{rp.proto.name}</span><p style={{fontSize:8,color:C.m,fontFamily:F.b}}>{rp.proto.note}</p></div>
+      <Badge text={rp.priority} color={rp.priority==="haute"?C.red:rp.priority==="moyenne"?C.amber:C.green} bg={rp.priority==="haute"?C.rD:rp.priority==="moyenne"?C.aD:C.gD}/>
+    </div>
+  ))}
+</Cd>}
+
+{methods.map(m=>{
+  const isSel=sel.find(s=>s.id===m.id);
+  return <Cd key={m.id} style={{marginBottom:6,padding:12,border:"1px solid "+(isSel?C.cyan+"40":C.b),background:isSel?"rgba(6,182,212,0.04)":C.card}}>
+    <div style={{display:"flex",alignItems:"center",gap:10}} onClick={()=>toggle(m.id)}>
+      <div style={{width:40,height:40,borderRadius:10,background:isSel?"rgba(6,182,212,0.15)":C.s1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,cursor:"pointer",flexShrink:0}}>{m.icon}</div>
+      <div style={{flex:1}}>
+        <div style={{display:"flex",alignItems:"center",gap:4}}>
+          <p style={{fontSize:12,fontWeight:700,color:isSel?C.w:C.d,fontFamily:F.h}}>{m.name}</p>
+          {m.regerent&&<span style={{fontSize:7,fontWeight:700,color:C.blue,padding:"1px 4px",borderRadius:3,border:"1px solid "+C.bD,fontFamily:F.b}}>REGERENT</span>}
+        </div>
+        <p style={{fontSize:8,color:C.m,fontFamily:F.b}}>{m.desc}</p>
+      </div>
+      {isSel&&<div style={{width:20,height:20,borderRadius:"50%",background:C.cyan,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:12,color:"#fff"}}>✓</span></div>}
+    </div>
+    {isSel&&<div style={{display:"flex",gap:4,marginTop:8,marginLeft:50}}>
+      {m.durs.map(du=><button key={du} onClick={()=>setDur(m.id,du)} style={{padding:"6px 10px",borderRadius:7,border:"none",cursor:"pointer",background:isSel.dur===du?C.cyan:C.s1,color:isSel.dur===du?"#fff":C.m,fontSize:10,fontWeight:700,fontFamily:F.b}}>{du}min</button>)}
+    </div>}
+  </Cd>;
+})}
+
+<button onClick={save} disabled={sel.length===0&&rpe===0} style={{width:"100%",padding:13,borderRadius:12,border:"none",marginTop:10,background:sel.length>0?("linear-gradient(135deg,"+C.cyan+","+C.blue+")"):(C.s1),color:sel.length>0?"#fff":C.m,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:F.b}}>
+  {sel.length===0?"Sélectionne tes séances":"💾 Enregistrer "+sel.length+" séance"+(sel.length>1?"s":"")}
+</button>
+```
+
+  </div>;
+}
+
+// ── STAFF PANEL ───────────────────────────────────────────────
+function StaffPanel({onClose,data}){
+const [tab,setTab]=useState(“oura”);
+const [saving,setSaving]=useState(false);
+const [savedMsg,setSavedMsg]=useState(””);
+const [date,setDate]=useState(todayKey());
+const [sl,setSl]=useState({total:””,deep:””,rem:””,light:””,awake:””,hrv:””,rhr:””,spo2:””,temp:””,latency:””,respRate:””,bed:””,wake:””});
+const [tr,setTr]=useState({dur:””,avg:””,max:””,trimp:””,dist:””,hiDist:””,sprints:””,accel:””,decel:””});
+const [confirmReset,setConfirmReset]=useState(false);
+const flash=(msg)=>{setSavedMsg(msg);setTimeout(()=>setSavedMsg(””),2500);};
+
+const saveO=async()=>{setSaving(true);await data.saveSleep(date,{total:parseFloat(sl.total)||0,deep:parseFloat(sl.deep)||0,rem:parseFloat(sl.rem)||0,light:parseFloat(sl.light)||0,awake:parseFloat(sl.awake)||0,hrv:parseInt(sl.hrv)||0,rhr:parseInt(sl.rhr)||0,spo2:parseInt(sl.spo2)||0,temp:parseFloat(sl.temp)||0,latency:parseInt(sl.latency)||0,respRate:parseFloat(sl.respRate)||0,bed:sl.bed||””,wake:sl.wake||””});setSaving(false);flash(“Données Oura sauvegardées ✓”);};
+const saveT=async()=>{setSaving(true);await data.saveTrain(date,{dur:parseInt(tr.dur)||0,avg:parseInt(tr.avg)||0,max:parseInt(tr.max)||0,trimp:parseInt(tr.trimp)||0,dist:parseFloat(tr.dist)||0,hiDist:parseFloat(tr.hiDist)||0,sprints:parseInt(tr.sprints)||0,accel:parseInt(tr.accel)||0,decel:parseInt(tr.decel)||0});setSaving(false);flash(“Données training sauvegardées ✓”);};
+
+const entries=[];
+if(data.store?.days){Object.keys(data.store.days).sort().reverse().forEach(dk=>{const dd=data.store.days[dk];if(dd.sleep||dd.train||dd.wellness)entries.push({date:dk,…dd,readiness:calcReadiness(dd.sleep?dd:null)});});}
+
+return <div style={{position:“fixed”,inset:0,background:“rgba(0,0,0,0.96)”,zIndex:300,overflowY:“auto”}}>
+<div style={{maxWidth:480,margin:“0 auto”,padding:16}}>
+<div style={{display:“flex”,justifyContent:“space-between”,alignItems:“center”,marginBottom:12}}>
+<span style={{fontSize:13,letterSpacing:3,color:C.w,fontFamily:F.h}}>⚙ STAFF</span>
+<button onClick={onClose} style={{width:36,height:36,borderRadius:10,background:C.rD,border:“1px solid “+C.red+“30”,color:C.red,fontSize:18,cursor:“pointer”,display:“flex”,alignItems:“center”,justifyContent:“center”}}>×</button>
+</div>
+
+```
+  {savedMsg&&<div style={{padding:10,borderRadius:10,background:C.gD,marginBottom:10,textAlign:"center"}}><span style={{fontSize:11,fontWeight:700,color:C.green,fontFamily:F.b}}>✓ {savedMsg}</span></div>}
+
+  {/* Controls */}
+  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:10,borderRadius:10,background:C.s1,marginBottom:6}}>
+    <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:14}}>▶</span><span style={{fontSize:10,fontWeight:700,color:C.w,fontFamily:F.b}}>Simulation</span></div>
+    <button onClick={()=>data.toggleSim(!data.showSim)} style={{width:44,height:24,borderRadius:12,border:"none",cursor:"pointer",background:data.showSim?C.green:C.bl,position:"relative",transition:"background .3s"}}>
+      <div style={{width:18,height:18,borderRadius:9,background:"#fff",position:"absolute",top:3,left:data.showSim?23:3,transition:"left .3s"}}/>
+    </button>
+  </div>
+
+  <button onClick={async()=>{const ns={...data.store,onboarded:false};await saveStore(ns);window.location.reload();}} style={{width:"100%",padding:10,borderRadius:10,background:C.s1,border:"1px solid "+C.bl,color:C.d,fontSize:9,cursor:"pointer",fontFamily:F.b,marginBottom:10}}>
+    🎬 Rejouer l'onboarding
+  </button>
+
+  <div style={{display:"flex",gap:3,marginBottom:12,background:C.s1,borderRadius:10,padding:3}}>
+    {[["oura","🔵 Oura"],["train","🟠 Training"],["hist","📊 Historique"]].map(([id,l])=>(
+      <button key={id} onClick={()=>setTab(id)} style={{flex:1,padding:"9px 0",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?C.card:"transparent",color:tab===id?C.w:C.m,fontSize:8,fontWeight:700,fontFamily:F.b}}>{l}</button>
+    ))}
+  </div>
+
+  <div style={{marginBottom:10}}>
+    <label style={{fontSize:8,color:C.d,fontFamily:F.b,display:"block",marginBottom:3}}>Date</label>
+    <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{width:"100%",padding:"9px 10px",borderRadius:9,border:"1px solid "+C.bl,background:C.s1,color:C.w,fontSize:13,fontFamily:F.h,outline:"none",boxSizing:"border-box",colorScheme:"dark"}}/>
+  </div>
+
+  {tab==="oura"&&<div>
+    <Cd style={{marginBottom:10}}><p style={{fontSize:8,letterSpacing:2,color:C.m,marginBottom:6,fontFamily:F.b}}>SOMMEIL</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+        <Inp label="Total" unit="h" value={sl.total} onChange={v=>setSl({...sl,total:v})} placeholder="7.2"/>
+        <Inp label="Profond" unit="h" value={sl.deep} onChange={v=>setSl({...sl,deep:v})} placeholder="1.5"/>
+        <Inp label="REM" unit="h" value={sl.rem} onChange={v=>setSl({...sl,rem:v})} placeholder="1.6"/>
+        <Inp label="Léger" unit="h" value={sl.light} onChange={v=>setSl({...sl,light:v})} placeholder="3.5"/>
+        <Inp label="Latence" unit="min" value={sl.latency} onChange={v=>setSl({...sl,latency:v})} step="1" placeholder="12"/>
+        <Inp label="Resp. nuit" unit="/min" value={sl.respRate} onChange={v=>setSl({...sl,respRate:v})} placeholder="14.5"/>
+      </div>
+    </Cd>
+    <Cd style={{marginBottom:10}}><p style={{fontSize:8,letterSpacing:2,color:C.m,marginBottom:6,fontFamily:F.b}}>BIOMÉTRIE</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+        <Inp label="HRV" unit="ms" value={sl.hrv} onChange={v=>setSl({...sl,hrv:v})} step="1" placeholder="58"/>
+        <Inp label="FC repos" unit="bpm" value={sl.rhr} onChange={v=>setSl({...sl,rhr:v})} step="1" placeholder="55"/>
+        <Inp label="SpO2" unit="%" value={sl.spo2} onChange={v=>setSl({...sl,spo2:v})} step="1" placeholder="97"/>
+        <Inp label="Temp. peau" unit="°C" value={sl.temp} onChange={v=>setSl({...sl,temp:v})} placeholder="0.1"/>
+      </div>
+    </Cd>
+    <Cd style={{marginBottom:12}}><p style={{fontSize:8,letterSpacing:2,color:C.m,marginBottom:6,fontFamily:F.b}}>HORAIRES</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+        <Inp label="Coucher" type="time" value={sl.bed} onChange={v=>setSl({...sl,bed:v})}/>
+        <Inp label="Réveil" type="time" value={sl.wake} onChange={v=>setSl({...sl,wake:v})}/>
+      </div>
+    </Cd>
+    <button onClick={saveO} disabled={saving} style={{width:"100%",padding:13,borderRadius:12,border:"none",background:"linear-gradient(135deg,"+C.blue+","+C.cyan+")",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:F.b,opacity:saving?0.5:1}}>{saving?"...":"💾 Sauvegarder Oura"}</button>
+  </div>}
+
+  {tab==="train"&&<div>
+    <Cd style={{marginBottom:10}}><p style={{fontSize:8,letterSpacing:2,color:C.m,marginBottom:6,fontFamily:F.b}}>CARDIO</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+        <Inp label="Durée" unit="min" value={tr.dur} onChange={v=>setTr({...tr,dur:v})} step="1" placeholder="82"/>
+        <Inp label="Distance" unit="km" value={tr.dist} onChange={v=>setTr({...tr,dist:v})} placeholder="8.4"/>
+        <Inp label="FC moy" unit="bpm" value={tr.avg} onChange={v=>setTr({...tr,avg:v})} step="1" placeholder="138"/>
+        <Inp label="FC max" unit="bpm" value={tr.max} onChange={v=>setTr({...tr,max:v})} step="1" placeholder="172"/>
+        <Inp label="TRIMP" value={tr.trimp} onChange={v=>setTr({...tr,trimp:v})} step="1" placeholder="278"/>
+      </div>
+    </Cd>
+    <Cd style={{marginBottom:12}}><p style={{fontSize:8,letterSpacing:2,color:C.m,marginBottom:6,fontFamily:F.b}}>MÉCANIQUE</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+        <Inp label="Dist. HI" unit="km" value={tr.hiDist} onChange={v=>setTr({...tr,hiDist:v})} placeholder="0.8"/>
+        <Inp label="Sprints" value={tr.sprints} onChange={v=>setTr({...tr,sprints:v})} step="1" placeholder="12"/>
+        <Inp label="Accél." value={tr.accel} onChange={v=>setTr({...tr,accel:v})} step="1" placeholder="24"/>
+        <Inp label="Décél." value={tr.decel} onChange={v=>setTr({...tr,decel:v})} step="1" placeholder="22"/>
+      </div>
+    </Cd>
+    <button onClick={saveT} disabled={saving} style={{width:"100%",padding:13,borderRadius:12,border:"none",background:"linear-gradient(135deg,"+C.amber+",#F97316)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:F.b,opacity:saving?0.5:1}}>{saving?"...":"💾 Sauvegarder Training"}</button>
+  </div>}
+
+  {tab==="hist"&&<div>
+    {entries.length===0?<Cd style={{textAlign:"center",padding:24}}><p style={{fontSize:30}}>📭</p><p style={{fontSize:13,color:C.w,fontFamily:F.h}}>Aucune donnée</p></Cd>:<div>
+      {entries.map(e=><Cd key={e.date} style={{marginBottom:5,padding:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <span style={{fontSize:11,fontWeight:700,color:C.w,fontFamily:F.h}}>{e.date}</span>
+            <div style={{display:"flex",gap:6,marginTop:3,flexWrap:"wrap"}}>
+              {e.sleep&&<span style={{fontSize:8,color:C.blue,fontFamily:F.b}}>🛏{e.sleep.total}h HRV{e.sleep.hrv}</span>}
+              {e.train&&<span style={{fontSize:8,color:C.amber,fontFamily:F.b}}>🏃{e.train.dur}min TRIMP{e.train.trimp}</span>}
+              {e.wellness?.rpe>0&&e.train?.dur>0&&<span style={{fontSize:8,color:C.cyan,fontFamily:F.b}}>sRPE {e.wellness.rpe*e.train.dur}</span>}
+            </div>
+          </div>
+          <div style={{textAlign:"center"}}>
+            <StateShape value={e.readiness===null?"warn":e.readiness>=75?"ok":e.readiness>=50?"warn":"danger"}/>
+            <p style={{fontSize:9,color:rCol(e.readiness),fontFamily:F.m,marginTop:2}}>{e.readiness===null?"?":e.readiness}</p>
+          </div>
+        </div>
+      </Cd>)}
+      <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid "+C.bl}}>
+        {!confirmReset?<button onClick={()=>setConfirmReset(true)} style={{width:"100%",padding:11,borderRadius:10,border:"1px solid "+C.red+"30",background:C.rD,color:C.red,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:F.b}}>🗑 Effacer tout</button>
+        :<div style={{display:"flex",gap:8}}><button onClick={async()=>{await data.resetAll();setConfirmReset(false);flash("Données effacées");}} style={{flex:1,padding:10,borderRadius:8,border:"none",background:C.red,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:F.b}}>Oui</button><button onClick={()=>setConfirmReset(false)} style={{flex:1,padding:10,borderRadius:8,border:"1px solid "+C.bl,background:C.card,color:C.d,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:F.b}}>Non</button></div>}
+      </div>
+    </div>}
+  </div>}
+</div>
+```
+
+  </div>;
+}
+
+// ── OPPOSITION INTEL SCREEN ───────────────────────────────────
+function OppositionScreen({data}){
+const [matchIdx,setMatchIdx]=useState(0);
+const [tab,setTab]=useState(“brief”);
+const [expandFaille,setExpandFaille]=useState(null);
+const [expandDef,setExpandDef]=useState(null);
+const [briefIA,setBriefIA]=useState(””);
+const [loadingIA,setLoadingIA]=useState(false);
+const [askedIA,setAskedIA]=useState(false);
+
+const switchMatch=(i)=>{setMatchIdx(i);setTab(“brief”);setExpandFaille(null);setExpandDef(null);setAskedIA(false);setBriefIA(””);};
+
+const M=MATCHES[matchIdx];
+const readiness=data.readiness||74;
+const matchupScore=M.calcMatchup(readiness);
+const gate=readiness>=70?“GO”:readiness>=55?“ADAPT”:“PROTECT”;
+const gateCol=gate===“GO”?C.green:gate===“ADAPT”?C.amber:C.red;
+const gateTxt={GO:“Brief valide. État physique optimal pour ce match.”,ADAPT:“Brief adapté. Rôle plus économique — qualité sur quantité.”,PROTECT:“Récupération prioritaire. Check-in J-1 déterminant.”};
+
+const askBriefIA=async()=>{
+setLoadingIA(true);setAskedIA(true);
+try{
+const r=await fetch(“https://api.anthropic.com/v1/messages”,{method:“POST”,headers:{“Content-Type”:“application/json”},
+body:JSON.stringify({model:“claude-sonnet-4-20250514”,max_tokens:1000,messages:[{role:“user”,content:
+`Tu es analyste tactique REGERENT PRO pour ${PLAYER.name} ${PLAYER.last}, avant-centre Newcastle. MATCH: ${M.opp} — ${M.date}, ${M.venue} (${M.comp}) BIOMÉTRIE: Readiness ${readiness}/100 · Gate ${gate} · HRV ${data.sleep.hrv}ms · ACWR ${data.ewma.val} FAILLES: ${M.failles.map((f,i)=>`${i+1}. ${f.title} (${f.level}): ${f.stat}`).join(' | ')} ADVERSAIRE DIRECT: ${M.defenders[0].name} — ${M.defenders[0].traits.join(', ')} Rédige un brief tactique ultra-personnalisé en 5 phrases max. Langage direct de footballeur pro. Commence par l'action prioritaire.`
+}]})});
+const d=await r.json();
+setBriefIA(d.content[0].text);
+}catch(e){setBriefIA(“Connexion impossible.”);}
+setLoadingIA(false);
+};
+
+// Helper: hex to rgb string
+const hex2rgb=h=>h.slice(1).match(/../g).map(x=>parseInt(x,16)).join(”,”);
+
+return <div>
+{/* ── SÉLECTEUR MATCH ── */}
+<div style={{background:C.card2,borderBottom:“1px solid “+C.bl,padding:“12px 16px 10px”}}>
+<div style={{display:“flex”,alignItems:“center”,gap:6,marginBottom:8}}>
+<span style={{fontSize:9,fontWeight:700,color:C.red,letterSpacing:2,fontFamily:F.b}}>OPPOSITION INTEL</span>
+<span style={{fontSize:7,color:C.m,fontFamily:F.b}}>· 3 MATCHS À VENIR</span>
+</div>
+<div style={{display:“flex”,gap:6}}>
+{MATCHES.map((mx,i)=>{
+const active=matchIdx===i;
+const urgent=mx.daysUntil<=2;
+const rgb=hex2rgb(mx.compColor);
+return <button key={i} onClick={()=>switchMatch(i)} style={{flex:1,padding:“8px 5px”,borderRadius:10,
+border:“1px solid “+(active?mx.compColor:C.bl),
+background:active?`rgba(${rgb},.12)`:C.card,cursor:“pointer”,textAlign:“center”,transition:“all .2s”}}>
+<div style={{display:“flex”,alignItems:“center”,justifyContent:“center”,gap:3,marginBottom:2}}>
+<span style={{fontSize:11}}>{mx.compIcon}</span>
+{urgent&&<div style={{width:5,height:5,borderRadius:“50%”,background:C.red}}/>}
+</div>
+<p style={{fontSize:8,fontWeight:700,color:active?mx.compColor:C.m,fontFamily:F.b,lineHeight:1.3}}>{mx.opp}</p>
+<p style={{fontSize:7,color:active?mx.compColor+“bb”:C.m,fontFamily:F.b,marginTop:1}}>
+{mx.daysUntil===0?“AUJOURD’HUI”:mx.daysUntil===1?“DEMAIN”:“J-”+mx.daysUntil}
+</p>
+<p style={{fontSize:6,color:C.m,fontFamily:F.b,marginTop:1}}>{mx.date.slice(0,6)}</p>
+</button>;
+})}
+</div>
+</div>
+
+```
+{/* ── EN-TÊTE MATCH ── */}
+{(()=>{const rgb=hex2rgb(M.compColor); return (
+<div style={{background:`linear-gradient(135deg,#0A1520,rgba(${rgb},.08))`,padding:"14px 16px 12px",borderBottom:`1px solid rgba(${rgb},.12)`}}>
+  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+        <Badge text={M.comp} color={M.compColor} bg={`rgba(${rgb},.12)`}/>
+        <Badge text={M.daysUntil===0?"MATCH DAY":M.daysUntil===1?"DEMAIN":"J-"+M.daysUntil} color={C.amber} bg={C.aD}/>
+        {!M.home&&<Badge text="EXTÉRIEUR" color={C.m} bg={C.b}/>}
+      </div>
+      <h1 style={{fontSize:24,letterSpacing:2,color:C.w,fontFamily:F.h,lineHeight:1}}>{M.opp}</h1>
+      <p style={{fontSize:9,color:C.d,fontFamily:F.b,marginTop:3}}>{M.date} · {M.time} · {M.venue}</p>
+    </div>
+    <div style={{background:C.card2,borderRadius:10,padding:"8px 10px",border:"1px solid "+C.bl,textAlign:"center",minWidth:52}}>
+      <span style={{fontSize:20,color:C.cyan,fontFamily:F.h}}>{M.prob.away}%</span>
+      <p style={{fontSize:6,color:C.m,fontFamily:F.b,letterSpacing:0.5,marginTop:1}}>NEWCASTLE</p>
+    </div>
+  </div>
+</div>
+);})()}
+
+<div style={{padding:"12px 16px",paddingBottom:24}}>
+
+  {/* Readiness Gate */}
+  <div style={{padding:12,borderRadius:12,background:gate==="GO"?C.gD:gate==="ADAPT"?C.aD:C.rD,border:"1px solid "+gateCol+"30",marginBottom:10}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:8,fontWeight:700,color:gateCol,letterSpacing:1.5,fontFamily:F.b}}>READINESS GATE</span>
+        <span style={{fontSize:15,fontWeight:700,color:gateCol,fontFamily:F.h}}>{gate}</span>
+      </div>
+      <span style={{fontSize:18,color:gateCol,fontFamily:F.h}}>{readiness}<span style={{fontSize:9}}>/100</span></span>
+    </div>
+    <p style={{fontSize:9,color:C.d,fontFamily:F.b,lineHeight:1.6}}>{gateTxt[gate]}</p>
+  </div>
+
+  {/* Matchup Score */}
+  <div style={{background:`linear-gradient(135deg,${C.card},rgba(6,182,212,.06))`,borderRadius:14,padding:12,border:"1px solid rgba(6,182,212,.15)",marginBottom:10}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+      <div>
+        <p style={{fontSize:7,color:C.cyan,letterSpacing:2,fontWeight:700,fontFamily:F.b,marginBottom:2}}>MATCHUP SCORE</p>
+        <p style={{fontSize:7.5,color:C.m,fontFamily:F.b}}>Readiness · Faille · Historique · Fatigue adverse</p>
+      </div>
+      <span style={{fontSize:30,color:matchupScore>=70?C.green:matchupScore>=50?C.amber:C.red,fontFamily:F.h}}>{matchupScore}<span style={{fontSize:9,color:C.m}}>/100</span></span>
+    </div>
+    <div style={{height:4,borderRadius:2,background:C.b}}>
+      <div style={{height:"100%",width:matchupScore+"%",borderRadius:2,background:`linear-gradient(90deg,${C.blue},${C.cyan})`,transition:"width 1s ease"}}/>
+    </div>
+  </div>
+
+  {/* Tabs */}
+  <div style={{display:"flex",gap:4,marginBottom:10,background:C.card2,borderRadius:10,padding:4}}>
+    {[{id:"brief",l:"Brief Tactique"},{id:"defenders",l:"Défenseurs"},{id:"failles",l:"Failles"}].map(t=>(
+      <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"7px 4px",borderRadius:7,border:"none",cursor:"pointer",
+        background:tab===t.id?`linear-gradient(135deg,${C.blue},${C.cyan})`:"transparent",
+        color:tab===t.id?"#fff":C.m,fontSize:9,fontWeight:700,fontFamily:F.b,letterSpacing:0.3}}>
+        {t.l}
+      </button>
+    ))}
+  </div>
+
+  {/* ── TAB: BRIEF ── */}
+  {tab==="brief"&&<div>
+    <p style={{fontSize:7,color:C.m,letterSpacing:2,fontFamily:F.b,marginBottom:7}}>CONTEXTE MATCH</p>
+    <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:12}}>
+      {M.context.map((ctx,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"7px 10px",borderRadius:8,background:C.card2,border:"1px solid "+C.b}}>
+          <span style={{fontSize:12}}>{ctx.icon}</span>
+          <span style={{fontSize:9,color:C.d,fontFamily:F.b,lineHeight:1.5}}>{ctx.text}</span>
+        </div>
+      ))}
+    </div>
+
+    <p style={{fontSize:7,color:C.m,letterSpacing:2,fontFamily:F.b,marginBottom:7}}>BRIEF PAR SITUATION — WISSA #{PLAYER.num}</p>
+    <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:12}}>
+      {M.situations.map((s,i)=>(
+        <div key={i} style={{padding:"9px 12px",borderRadius:10,background:C.card2,border:"1px solid "+C.b,
+          borderLeft:"3px solid "+(i<2?C.red:i<4?C.amber:C.blue)}}>
+          <p style={{fontSize:8,color:C.m,fontFamily:F.b,marginBottom:3,letterSpacing:0.5}}>{s.ctx.toUpperCase()}</p>
+          <p style={{fontSize:11,color:C.w,fontFamily:F.b,fontWeight:600,marginBottom:2}}>{s.action}</p>
+          <p style={{fontSize:9,color:C.d,fontFamily:F.b,fontStyle:"italic"}}>{s.why}</p>
+        </div>
+      ))}
+    </div>
+
+    {/* Brief IA */}
+    <div style={{background:`linear-gradient(135deg,${C.card},rgba(59,130,246,.05))`,borderRadius:14,padding:13,border:"1px solid "+C.b,marginBottom:12}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:13}}>⚽</span>
+          <span style={{fontSize:9,fontWeight:700,color:C.blue,letterSpacing:1,fontFamily:F.b}}>BRIEF IA</span>
+          {!askedIA&&<Badge text="LIVE" color={C.green} bg={C.gD}/>}
+        </div>
+        {!askedIA&&<button onClick={askBriefIA} style={{padding:"6px 12px",borderRadius:8,border:"none",background:`linear-gradient(135deg,${C.red},${C.amber})`,color:"#fff",fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:F.b}}>Générer →</button>}
+        {askedIA&&!loadingIA&&<button onClick={()=>{setAskedIA(false);setBriefIA("");}} style={{padding:"5px 10px",borderRadius:7,border:"1px solid "+C.bl,background:"transparent",color:C.m,fontSize:8,cursor:"pointer",fontFamily:F.b}}>Refaire</button>}
+      </div>
+      {!askedIA&&<p style={{fontSize:9,color:C.m,fontFamily:F.b,lineHeight:1.7}}>Brief personnalisé selon ta readiness ({readiness}/100) et les failles de {M.opp}.</p>}
+      {loadingIA&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0"}}>
+        <div style={{width:16,height:16,borderRadius:"50%",border:"2px solid "+C.rD,borderTopColor:C.red,animation:"spin .8s linear infinite"}}/>
+        <span style={{fontSize:10,color:C.m,fontFamily:F.b}}>Analyse en cours...</span>
+      </div>}
+      {briefIA&&!loadingIA&&<p style={{fontSize:11,color:C.w,fontFamily:F.b,lineHeight:1.85,whiteSpace:"pre-line"}}>{briefIA}</p>}
+    </div>
+
+    {/* Timeline semaine chargée */}
+    <p style={{fontSize:7,color:C.m,letterSpacing:2,fontFamily:F.b,marginBottom:7}}>SEMAINE CHARGÉE — MARS 2026</p>
+    {[
+      {d:"7 Mar · J-2",t:"Man City · FA Cup 5T · St James' Park",col:C.blue,active:matchIdx===0},
+      {d:"10 Mar · J-5",t:"Newcastle vs Barcelone · LDC R16 Aller",col:"#A855F7",active:matchIdx===1},
+      {d:"11 Mar",t:"Chelsea vs PSG · LDC — rotation Chelsea probable",col:C.amber,active:false},
+      {d:"14 Mar · J-9",t:"Chelsea vs Newcastle · Stamford Bridge · PL J30",col:C.cyan,active:matchIdx===2},
+      {d:"18 Mar",t:"Barcelone vs Newcastle · LDC R16 Retour",col:"#A855F7",active:false},
+    ].map((tl,i)=>(
+      <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"6px 0",borderBottom:"1px solid "+C.b,opacity:tl.active?1:0.65}}>
+        <div style={{width:7,height:7,borderRadius:"50%",background:tl.active?tl.col:C.b,border:"1px solid "+tl.col,marginTop:3,flexShrink:0,
+          boxShadow:tl.active?"0 0 7px "+tl.col+"80":"none"}}/>
+        <div>
+          <p style={{fontSize:8,color:tl.active?tl.col:C.m,fontFamily:F.b,fontWeight:700,marginBottom:1}}>{tl.d}</p>
+          <p style={{fontSize:9,color:tl.active?C.d:C.m,fontFamily:F.b}}>{tl.t}</p>
+        </div>
+      </div>
+    ))}
+  </div>}
+
+  {/* ── TAB: DÉFENSEURS ── */}
+  {tab==="defenders"&&<div>
+    <p style={{fontSize:7,color:C.m,letterSpacing:2,fontFamily:F.b,marginBottom:10}}>DÉFENSEURS — {M.opp.toUpperCase()}</p>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {M.defenders.map((def,i)=>{
+        const rgb=hex2rgb(def.threatCol);
+        return <div key={i} onClick={()=>setExpandDef(expandDef===i?null:i)}
+          style={{borderRadius:12,overflow:"hidden",border:`1px solid rgba(${rgb},.3)`,cursor:"pointer"}}>
+          <div style={{padding:"12px 14px",background:`linear-gradient(135deg,${C.card},rgba(${rgb},.04))`}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{width:32,height:32,borderRadius:8,background:`rgba(${rgb},.15)`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <span style={{fontSize:9,color:def.threatCol,fontFamily:F.h}}>#{def.num}</span>
+                </div>
+                <div>
+                  <p style={{fontSize:13,color:C.w,fontFamily:F.h,letterSpacing:0.5}}>{def.flag} {def.name}</p>
+                  <p style={{fontSize:8,color:C.m,fontFamily:F.b}}>{def.pos}</p>
+                </div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <Badge text={def.threat} color={def.threatCol} bg={`rgba(${rgb},.1)`}/>
+                <p style={{fontSize:8,color:C.m,fontFamily:F.b,marginTop:4}}>Vuln. <span style={{color:def.threatCol,fontFamily:F.h,fontSize:14}}>{def.vulnScore}</span></p>
+              </div>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:7}}>
+              {def.traits.map((t,j)=><span key={j} style={{fontSize:8,padding:"3px 7px",borderRadius:4,background:C.s1,color:C.d,fontFamily:F.b}}>{t}</span>)}
+            </div>
+            <div style={{padding:"7px 10px",borderRadius:8,background:C.s1,borderLeft:"3px solid "+def.threatCol}}>
+              <p style={{fontSize:10,color:C.w,fontFamily:F.b,fontWeight:600}}>{def.brief}</p>
+            </div>
+          </div>
+          {expandDef===i&&<div style={{padding:"10px 14px",background:C.s1,borderTop:"1px solid "+C.b}}>
+            <p style={{fontSize:8,color:C.m,fontFamily:F.b,marginBottom:5}}>SCORE VULNÉRABILITÉ</p>
+            <div style={{height:5,borderRadius:2,background:C.b,marginBottom:4}}>
+              <div style={{height:"100%",width:def.vulnScore+"%",borderRadius:2,background:`linear-gradient(90deg,${def.threatCol},${def.threatCol}80)`,transition:"width .8s"}}/>
+            </div>
+            <p style={{fontSize:7,color:C.m,fontFamily:F.b}}>{def.rating}/10 · Note Transfermarkt</p>
+          </div>}
+        </div>;
+      })}
+    </div>
+  </div>}
+
+  {/* ── TAB: FAILLES ── */}
+  {tab==="failles"&&<div>
+    <p style={{fontSize:7,color:C.m,letterSpacing:2,fontFamily:F.b,marginBottom:10}}>FAILLES SYSTÉMIQUES — {M.opp.toUpperCase()}</p>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {M.failles.map((f,i)=>{
+        const rgb=hex2rgb(f.col);
+        return <div key={i} onClick={()=>setExpandFaille(expandFaille===i?null:i)}
+          style={{borderRadius:12,border:`1px solid rgba(${rgb},.3)`,cursor:"pointer",overflow:"hidden"}}>
+          <div style={{padding:"12px 14px",background:C.card}}>
+            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:6}}>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                  <Badge text={f.level} color={f.col} bg={`rgba(${rgb},.1)`}/>
+                  <span style={{fontSize:7,color:C.m,fontFamily:F.b}}>FAILLE #{f.id}</span>
+                </div>
+                <p style={{fontSize:13,color:C.w,fontFamily:F.h,letterSpacing:0.5,marginBottom:3}}>{f.title}</p>
+                <p style={{fontSize:9,color:f.col,fontFamily:F.m}}>{f.stat}</p>
+              </div>
+              <span style={{fontSize:14,color:C.m,display:"block",transform:expandFaille===i?"rotate(180deg)":"none",transition:"transform .2s"}}>▾</span>
+            </div>
+            <p style={{fontSize:9,color:C.d,fontFamily:F.b,lineHeight:1.6}}>{f.desc}</p>
+          </div>
+          {expandFaille===i&&<div style={{padding:"10px 14px",background:C.s1,borderTop:"1px solid "+C.b}}>
+            <p style={{fontSize:7,color:C.m,letterSpacing:1.5,fontFamily:F.b,marginBottom:6}}>ACTIONS</p>
+            {f.actions.map((a,j)=>(
+              <div key={j} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:"1px solid "+C.b}}>
+                <div style={{width:18,height:18,borderRadius:5,background:`rgba(${rgb},.15)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <span style={{fontSize:8,color:f.col,fontFamily:F.h}}>{j+1}</span>
+                </div>
+                <p style={{fontSize:10,color:C.w,fontFamily:F.b}}>{a}</p>
+              </div>
+            ))}
+            <div style={{marginTop:8,padding:"6px 10px",borderRadius:8,background:gate==="GO"?"rgba(34,197,94,.08)":"rgba(245,158,11,.08)",border:"1px solid "+gateCol+"25"}}>
+              <p style={{fontSize:8,color:gateCol,fontFamily:F.b}}>Gate {gate} · {readiness}/100 — {gate==="GO"?"Exploitation maximale":"Plan adapté"}</p>
+            </div>
+          </div>}
+        </div>;
+      })}
+    </div>
+
+    {/* Probabilités */}
+    <div style={{marginTop:12,padding:"12px 14px",borderRadius:12,background:C.card2,border:"1px solid "+C.bl}}>
+      <p style={{fontSize:7,color:C.m,letterSpacing:2,fontFamily:F.b,marginBottom:8}}>PROBABILITÉS MATCH</p>
+      <div style={{display:"flex",gap:4,alignItems:"flex-end",height:50,marginBottom:6}}>
+        {[
+          {l:M.opp.split(" ")[0],v:M.prob.home,c:C.blue},
+          {l:"Nul",v:M.prob.draw,c:C.m},
+          {l:"Newcastle",v:M.prob.away,c:C.cyan},
+        ].map(({l,v,c})=>(
+          <div key={l} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%"}}>
+            <span style={{fontSize:9,color:c,fontFamily:F.m,marginBottom:3}}>{v}%</span>
+            <div style={{width:"100%",borderRadius:"4px 4px 0 0",height:Math.round(v/55*44)+4,background:c+"50"}}/>
+            <span style={{fontSize:7,color:C.m,fontFamily:F.b,marginTop:3}}>{l}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>}
+
+</div>
+```
+
+  </div>;
+}
+
+// ── ONBOARDING ────────────────────────────────────────────────
+function Onboarding({onComplete}){
+const [step,setStep]=useState(0);
+const slides=[
+{icon:“🛡”,title:“Bienvenue “+PLAYER.name,sub:“REGERENT PRO protège ton corps.”,desc:“On analyse ton sommeil, ta récupération et ta charge pour te dire exactement quoi faire chaque jour.”,color:C.blue},
+{icon:“🧠”,title:“Check-in · 40 secondes”,sub:“Chaque matin, dis-nous comment tu te sens.”,desc:“Poids, fatigue, douleurs, hydratation. Ton ressenti croisé avec tes données biométriques.”,color:C.cyan},
+{icon:“⚡”,title:“Action du jour”,sub:“Une seule directive, claire.”,desc:”‘Tu es au top, donne tout.’ ou ‘Repos, caisson 60min.’ Décision basée sur la science, pas sur le feeling.”,color:C.green},
+{icon:“💎”,title:“Récupération intégrée”,sub:“Caisson Hyperbare + Chaud/Froid REGERENT.”,desc:“On te prescrit le bon protocole au bon moment et on mesure l’impact sur ton HRV le lendemain.”,color:C.amber},
+{icon:“🔴”,title:“114 jours. Plus jamais.”,sub:“On détecte les blessures avant qu’elles arrivent.”,desc:“Genou D · Août 2025. Le moteur aurait alerté J-6. 23 matchs manqués évitables. C’est le passé.”,color:C.red},
+];
+const s=slides[step];
+return <div style={{minHeight:“100vh”,background:C.bg,display:“flex”,flexDirection:“column”,alignItems:“center”,justifyContent:“center”,padding:32}}>
+<div style={{display:“flex”,gap:6,marginBottom:40}}>
+{slides.map((_,i)=><div key={i} style={{width:i===step?20:6,height:6,borderRadius:3,background:i===step?s.color:C.bl,transition:“all .4s”}}/>)}
+</div>
+<div key={step} style={{animation:“fadeUp .5s ease”,fontSize:64,marginBottom:24}}>{s.icon}</div>
+{step===0&&<div style={{display:“flex”,alignItems:“center”,gap:6,marginBottom:16}}><span style={{fontSize:18,letterSpacing:6,color:C.w,fontFamily:F.h}}>REGERENT</span><span style={{fontSize:9,fontWeight:700,letterSpacing:2,color:C.blue,padding:“2px 6px”,border:“1px solid “+C.bD,borderRadius:3,fontFamily:F.b}}>PRO</span></div>}
+<div key={“t”+step} style={{animation:“fadeUp .5s ease .1s both”,textAlign:“center”,maxWidth:320}}>
+<h2 style={{fontSize:22,color:C.w,fontFamily:F.h,marginBottom:6}}>{s.title}</h2>
+<p style={{fontSize:13,fontWeight:700,color:s.color,fontFamily:F.b,marginBottom:12}}>{s.sub}</p>
+<p style={{fontSize:11,color:C.d,fontFamily:F.b,lineHeight:1.7}}>{s.desc}</p>
+</div>
+<div style={{marginTop:40,width:“100%”,maxWidth:320}}>
+{step<slides.length-1?<button onClick={()=>setStep(step+1)} style={{width:“100%”,padding:14,borderRadius:12,border:“none”,background:“linear-gradient(135deg,”+s.color+”,”+C.blue+”)”,color:”#fff”,fontSize:14,fontWeight:700,cursor:“pointer”,fontFamily:F.b}}>Suivant</button>
+:<button onClick={onComplete} style={{width:“100%”,padding:14,borderRadius:12,border:“none”,background:“linear-gradient(135deg,”+C.green+”,”+C.cyan+”)”,color:”#fff”,fontSize:14,fontWeight:700,cursor:“pointer”,fontFamily:F.b}}>C’est parti 🚀</button>}
+{step>0&&<button onClick={()=>setStep(step-1)} style={{width:“100%”,padding:10,marginTop:8,borderRadius:10,border:“none”,background:“transparent”,color:C.m,fontSize:11,cursor:“pointer”,fontFamily:F.b}}>← Retour</button>}
+</div>
+
+  </div>;
+}
+
+// ── APP — SLIDE TRANSITIONS ───────────────────────────────────
+export default function App(){
+const [screen,setScreen]=useState(“home”);
+const [prevScreen,setPrevScreen]=useState(“home”);
+const [transitioning,setTransitioning]=useState(false);
+const [slideDir,setSlideDir]=useState(1); // 1 = right, -1 = left
+const [staff,setStaff]=useState(false);
+const [ready,setReady]=useState(false);
+const tapCount=useRef(0);
+const tapTimer=useRef(null);
+const data=useData();
+
+useEffect(()=>{setTimeout(()=>setReady(true),1600);},[]);
+
+const navOrder=[“home”,“intel”,“opposition”,“checkin”,“recov”,“sim”,“passport”];
+
+const navTo=id=>{
+if(id===screen||transitioning) return;
+const fromIdx=navOrder.indexOf(screen);
+const toIdx=navOrder.indexOf(id);
+setSlideDir(toIdx>=fromIdx?1:-1);
+setTransitioning(true);
+setTimeout(()=>{setScreen(id);setTimeout(()=>setTransitioning(false),50);},180);
+};
+
+const handleLogoTap=()=>{
+tapCount.current++;
+if(tapTimer.current) clearTimeout(tapTimer.current);
+tapTimer.current=setTimeout(()=>{tapCount.current=0;},1500);
+if(tapCount.current>=5){setStaff(true);tapCount.current=0;}
+};
+
+const nav=[
+{id:“home”,icon:“◉”,l:“Accueil”},
+{id:“intel”,icon:“🧬”,l:“Intel”},
+{id:“opposition”,icon:“⚽”,l:“Adverse”},
+{id:“checkin”,icon:“🧠”,l:“Check-in”},
+{id:“recov”,icon:“💎”,l:“Récup”},
+…(data.showSim?[{id:“sim”,icon:“▶”,l:“Sim”}]:[]),
+{id:“passport”,icon:“◈”,l:“Passeport”},
+];
+
+if(!ready) return <div style={{minHeight:“100vh”,background:C.bg,display:“flex”,alignItems:“center”,justifyContent:“center”}}>
+<link href={FONT_URL} rel="stylesheet"/>
+<div style={{textAlign:“center”}}>
+<div style={{fontSize:24,letterSpacing:8,color:C.w,fontFamily:”‘Bebas Neue’,sans-serif”}}>REGERENT</div>
+<div style={{fontSize:9,color:C.blue,letterSpacing:3,fontWeight:700,marginTop:4,fontFamily:“sans-serif”}}>PRO</div>
+<p style={{fontSize:8,color:C.m,letterSpacing:2,marginTop:8,fontFamily:“sans-serif”}}>INTELLIGENCE ENGINE</p>
+<div style={{width:30,height:2,background:C.blue,margin:“16px auto 0”,borderRadius:1,animation:“ld 1.2s infinite”}}/>
+</div>
+<style>{”@keyframes ld{0%,100%{opacity:.2;transform:scaleX(.5)}50%{opacity:1;transform:scaleX(1.5)}}”}</style>
+
+  </div>;
+
+if(!data.onboarded) return <>
+<link href={FONT_URL} rel="stylesheet"/>
+<style>{”*{margin:0;padding:0;box-sizing:border-box}body{background:”+C.bg+”}::-webkit-scrollbar{width:0}@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes bounceIn{0%{transform:scale(.5);opacity:0}70%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}”}</style>
+<Onboarding onComplete={data.completeOnboard}/>
+</>;
+
+return <div style={{fontFamily:F.b,background:C.bg,color:C.w,minHeight:“100vh”,maxWidth:480,margin:“0 auto”,WebkitFontSmoothing:“antialiased”,paddingBottom:80}}>
+<link href={FONT_URL} rel="stylesheet"/>
+<style>{`*{margin:0;padding:0;box-sizing:border-box}body{background:${C.bg}}::-webkit-scrollbar{width:0}input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none}input[type=number]{-moz-appearance:textfield}@keyframes spin{to{transform:rotate(360deg)}}@keyframes bounceIn{0%{transform:scale(.5);opacity:0}70%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes slideInRight{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}@keyframes slideInLeft{from{opacity:0;transform:translateX(-40px)}to{opacity:1;transform:translateX(0)}}`}</style>
+<div onClick={handleLogoTap} style={{position:“fixed”,top:6,left:12,width:130,height:35,zIndex:200,cursor:“default”}}/>
+
+```
+{/* Slide transition wrapper */}
+<div key={screen} style={{animation:transitioning?"none":(slideDir>0?"slideInRight":"slideInLeft")+" .22s cubic-bezier(.25,.46,.45,.94) both",minHeight:"calc(100vh - 80px)"}}>
+  {screen==="home"&&<HomeScreen data={data}/>}
+  {screen==="intel"&&<IntelligenceScreen data={data}/>}
+  {screen==="opposition"&&<OppositionScreen data={data}/>}
+  {screen==="checkin"&&<CheckInScreen data={data}/>}
+  {screen==="recov"&&<RecovScreen data={data}/>}
+  {screen==="sim"&&<SimScreen/>}
+  {screen==="passport"&&<PassportScreen/>}
+</div>
+
+{staff&&<StaffPanel onClose={()=>setStaff(false)} data={data}/>}
+
+{/* Bottom nav */}
+<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,padding:"6px 4px 18px",background:"linear-gradient(180deg,transparent,"+C.bg+" 30%)",display:"flex",justifyContent:"space-around",zIndex:100}}>
+  {nav.map(n=>(
+    <button key={n.id} onClick={()=>navTo(n.id)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",color:screen===n.id?C.blue:C.m,position:"relative",transition:"color .2s"}}>
+      <span style={{fontSize:16,lineHeight:1}}>{n.icon}</span>
+      <span style={{fontSize:7,fontWeight:600,fontFamily:F.b}}>{n.l}</span>
+      {screen===n.id&&<div style={{position:"absolute",top:-4,width:20,height:2,borderRadius:1,background:C.blue}}/>}
+    </button>
+  ))}
+</div>
+```
+
+  </div>;
+}
